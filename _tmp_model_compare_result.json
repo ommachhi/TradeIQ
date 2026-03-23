@@ -1,0 +1,10 @@
+{
+  "rows": 1565,
+  "random_forest": {
+    "rmse": 11.090790789242607,
+    "mae": 7.024619352770042,
+    "r2": -0.02689990294147404,
+    "mape_percent": 4.142032291427562
+  },
+  "lstm_error": "No module named 'tensorflow'"
+}

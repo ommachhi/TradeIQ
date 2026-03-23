@@ -1,0 +1,354 @@
+import { useState } from 'react'
+import { predictionAPI } from '../services/api'
+
+/**
+ * PredictionForm Component
+ * Form for inputting stock features and getting predictions
+ */
+const PredictionForm = ({ onPredictionComplete }) => {
+  const [inputMode, setInputMode] = useState('symbol') // 'symbol' or 'manual'
+  const [formData, setFormData] = useState({
+    symbol: '',
+    open: '',
+    high: '',
+    low: '',
+    volume: '',
+  })
+
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+
+  const handleInputModeChange = (mode) => {
+    setInputMode(mode)
+    setError(null)
+    setResult(null)
+    setFormData({
+      symbol: '',
+      open: '',
+      high: '',
+      low: '',
+      volume: '',
+    })
+  }
+
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }))
+    setError(null)
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setResult(null)
+
+    try {
+      let predictionData
+
+      if (inputMode === 'symbol') {
+        // Symbol-based prediction
+        if (!formData.symbol) {
+          throw new Error('Stock symbol is required')
+        }
+        predictionData = { symbol: formData.symbol.toUpperCase() }
+      } else {
+        // Manual input prediction
+        if (!formData.open || !formData.high || !formData.low || !formData.volume) {
+          throw new Error('All fields are required')
+        }
+
+        const open = parseFloat(formData.open)
+        const high = parseFloat(formData.high)
+        const low = parseFloat(formData.low)
+        const volume = parseInt(formData.volume)
+
+        if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(volume)) {
+          throw new Error('Invalid number format')
+        }
+
+        if (high < low) {
+          throw new Error('High price must be greater than or equal to low price')
+        }
+
+        if (open < low || open > high) {
+          throw new Error('Open price must be between low and high prices')
+        }
+
+        predictionData = { open, high, low, volume }
+      }
+
+      // Call API
+      const prediction = await predictionAPI.predict(predictionData)
+
+      setResult(prediction)
+      if (onPredictionComplete) {
+        onPredictionComplete(prediction)
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || 'Failed to get prediction')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <div className="card card-hover">
+        <h2 className="text-3xl font-bold mb-8 gradient-text">Stock Price Predictor</h2>
+
+        {/* Input Mode Selector */}
+        <div className="mb-6">
+          <div className="flex space-x-4 mb-4">
+            <button
+              type="button"
+              onClick={() => handleInputModeChange('symbol')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                inputMode === 'symbol'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+              }`}
+            >
+              Stock Symbol
+            </button>
+            <button
+              type="button"
+              onClick={() => handleInputModeChange('manual')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                inputMode === 'manual'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+              }`}
+            >
+              Manual Input
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {inputMode === 'symbol' ? (
+            /* Stock Symbol Input */
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Stock Symbol
+              </label>
+              <input
+                type="text"
+                name="symbol"
+                value={formData.symbol}
+                onChange={handleChange}
+                placeholder="e.g., AAPL, MSFT, TSLA"
+                className="input-field w-full"
+                maxLength="20"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Enter a stock symbol to fetch live data and get prediction
+              </p>
+            </div>
+          ) : (
+            /* Manual Input Fields */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Open Price Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Opening Price ($)
+                </label>
+                <input
+                  type="number"
+                  name="open"
+                  value={formData.open}
+                  onChange={handleChange}
+                  placeholder="e.g., 120.5"
+                  className="input-field w-full"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+
+              {/* High Price Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Highest Price ($)
+                </label>
+                <input
+                  type="number"
+                  name="high"
+                  value={formData.high}
+                  onChange={handleChange}
+                  placeholder="e.g., 125.0"
+                  className="input-field w-full"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+
+              {/* Low Price Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Lowest Price ($)
+                </label>
+                <input
+                  type="number"
+                  name="low"
+                  value={formData.low}
+                  onChange={handleChange}
+                  placeholder="e.g., 118.2"
+                  className="input-field w-full"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+
+              {/* Volume Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Trading Volume
+                </label>
+                <input
+                  type="number"
+                  name="volume"
+                  value={formData.volume}
+                  onChange={handleChange}
+                  placeholder="e.g., 450000"
+                  className="input-field w-full"
+                  min="0"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300">
+              <p className="font-medium">Error</p>
+              <p className="text-sm mt-1">{error}</p>
+            </div>
+          )}
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary w-full flex items-center justify-center space-x-2"
+          >
+            {loading ? (
+              <>
+                <span className="loading-spinner"></span>
+                <span>Predicting...</span>
+              </>
+            ) : (
+              'Get Prediction'
+            )}
+          </button>
+        </form>
+
+        {/* Result Display */}
+        {result && (
+          <div className="mt-8 pt-8 border-t border-slate-700">
+            <h3 className="text-xl font-bold text-white mb-6">Prediction Result</h3>
+
+            {/* Stock Symbol Display */}
+            {result.symbol && (
+              <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <p className="text-blue-300 font-medium">Stock Symbol: {result.symbol}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Predicted Price */}
+              <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700">
+                <p className="text-gray-400 text-sm font-medium mb-2">Predicted Price</p>
+                <p className="text-4xl font-bold text-blue-400">
+                  ${result.predicted_price.toFixed(2)}
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Based on input parameters
+                </p>
+              </div>
+
+              {/* Recommendation Badge */}
+              <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700 flex flex-col items-center justify-center">
+                <p className="text-gray-400 text-sm font-medium mb-3">Recommendation</p>
+                <span
+                  className={`badge ${
+                    result.recommendation === 'BUY'
+                      ? 'badge-buy'
+                      : result.recommendation === 'SELL'
+                      ? 'badge-sell'
+                      : 'badge-hold'
+                  } text-lg px-6 py-3`}
+                >
+                  {result.recommendation}
+                </span>
+              </div>
+            </div>
+
+            {/* Technical Indicators */}
+            {result.technical_indicators && (
+              <div className="mt-6 bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
+                <p className="text-gray-400 text-xs font-medium mb-3">TECHNICAL INDICATORS</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  {result.technical_indicators.ma_5 && (
+                    <div>
+                      <p className="text-gray-500">MA(5)</p>
+                      <p className="text-white font-semibold">${result.technical_indicators.ma_5.toFixed(2)}</p>
+                    </div>
+                  )}
+                  {result.technical_indicators.ma_10 && (
+                    <div>
+                      <p className="text-gray-500">MA(10)</p>
+                      <p className="text-white font-semibold">${result.technical_indicators.ma_10.toFixed(2)}</p>
+                    </div>
+                  )}
+                  {result.technical_indicators.ma_20 && (
+                    <div>
+                      <p className="text-gray-500">MA(20)</p>
+                      <p className="text-white font-semibold">${result.technical_indicators.ma_20.toFixed(2)}</p>
+                    </div>
+                  )}
+                  {result.technical_indicators.daily_return && (
+                    <div>
+                      <p className="text-gray-500">Daily Return</p>
+                      <p className="text-white font-semibold">{(result.technical_indicators.daily_return * 100).toFixed(2)}%</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Input Summary */}
+            {result.input_features && (
+              <div className="mt-6 bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
+                <p className="text-gray-400 text-xs font-medium mb-3">INPUT SUMMARY</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500">Open</p>
+                    <p className="text-white font-semibold">${result.input_features.open}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">High</p>
+                    <p className="text-white font-semibold">${result.input_features.high}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Low</p>
+                    <p className="text-white font-semibold">${result.input_features.low}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Volume</p>
+                    <p className="text-white font-semibold">{result.input_features.volume.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default PredictionForm
