@@ -702,7 +702,8 @@ class HealthCheckAPIView(APIView):
     def get(self, request):
         # check AI predictor module for model presence
         try:
-            from .ai import predictor
+            from ai import predictor
+            predictor._load_model()
             model_status = predictor._model is not None
         except Exception:
             model_status = False
