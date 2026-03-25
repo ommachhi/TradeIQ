@@ -22,6 +22,12 @@ import {
  * Fixed version with resolved navigation and fully functional user management.
  */
 const TradeIQAdmin = () => {
+  const apiBaseUrl =
+    import.meta.env.VITE_API_BASE_URL ||
+    (import.meta.env.PROD
+      ? 'https://tradeiq-5.onrender.com/api'
+      : 'http://localhost:8000/api');
+
   // Navigation State
   const [activeTab, setActiveTab] = useState('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -69,7 +75,7 @@ const TradeIQAdmin = () => {
       // Native fetch for predictions
       let predictions = [];
       try {
-        const resp = await fetch('http://localhost:8000/api/admin/predictions/', {
+        const resp = await fetch(`${apiBaseUrl}/admin/predictions/`, {
           headers: { 'Authorization': `Bearer ${authHelpers.getToken()}` }
         });
         if (resp.ok) predictions = await resp.json();
