@@ -1,7 +1,6 @@
 """
-Train and save the ML model for stock price prediction
-This script trains a Random Forest model on historical stock data
-and saves it as model.pkl
+Train and save the ML model for stock price prediction with proper feature scaling.
+This version saves both the Random Forest model AND the StandardScaler.
 """
 
 import pandas as pd
@@ -21,14 +20,13 @@ print("\nFirst few rows:")
 print(df.head())
 
 # Prepare features and target
-# We'll predict 'Close' price based on 'Open', 'High', 'Low', 'Volume'
-features = ['Open', 'High', 'Low', 'Volume']
-target = 'Close'
+features_cols = ['Open', 'High', 'Low', 'Volume']
+target_col = 'Close'
 
 # Check if all required columns exist
-if all(col in df.columns for col in features + [target]):
-    X = df[features].copy()
-    y = df[target].copy()
+if all(col in df.columns for col in features_cols + [target_col]):
+    X = df[features_cols].copy()
+    y = df[target_col].copy()
     
     # Handle missing values
     X = X.fillna(X.mean())
@@ -42,7 +40,7 @@ if all(col in df.columns for col in features + [target]):
         X, y, test_size=0.2, random_state=42
     )
     
-    # Feature scaler for model input columns (Open/High/Low/Volume)
+    # Feature scaler for model input columns
     feature_scaler = StandardScaler()
     X_train_scaled = feature_scaler.fit_transform(X_train)
     X_test_scaled = feature_scaler.transform(X_test)
@@ -51,8 +49,8 @@ if all(col in df.columns for col in features + [target]):
     target_scaler = StandardScaler()
     y_train_scaled = target_scaler.fit_transform(y_train.values.reshape(-1, 1)).ravel()
     y_test_scaled = target_scaler.transform(y_test.values.reshape(-1, 1)).ravel()
-
-    # Train Random Forest model
+    
+    # Train Random Forest model on scaled features
     model = RandomForestRegressor(
         n_estimators=100,
         max_depth=20,
@@ -64,27 +62,34 @@ if all(col in df.columns for col in features + [target]):
     
     model.fit(X_train_scaled, y_train_scaled)
     
-    # Evaluate model in original price scale
+    # Evaluate model on both scaled datasets
     train_pred_scaled = model.predict(X_train_scaled).reshape(-1, 1)
     test_pred_scaled = model.predict(X_test_scaled).reshape(-1, 1)
     train_pred = target_scaler.inverse_transform(train_pred_scaled).ravel()
     test_pred = target_scaler.inverse_transform(test_pred_scaled).ravel()
+    
     train_rmse = np.sqrt(mean_squared_error(y_train, train_pred))
     test_rmse = np.sqrt(mean_squared_error(y_test, test_pred))
-    train_score = r2_score(y_train, train_pred)
-    test_score = r2_score(y_test, test_pred)
+    train_r2 = r2_score(y_train, train_pred)
+    test_r2 = r2_score(y_test, test_pred)
     
     print(f"\nModel Performance:")
     print(f"Training RMSE: {train_rmse:.4f}")
     print(f"Testing RMSE: {test_rmse:.4f}")
-    print(f"Training R² Score: {train_score:.4f}")
-    print(f"Testing R² Score: {test_score:.4f}")
-
+    print(f"Training R² Score: {train_r2:.4f}")
+    print(f"Testing R² Score: {test_r2:.4f}")
+    
     # Save model + feature scaler + target scaler as tuple
-    with open('tradeiq_backend/model.pkl', 'wb') as f:
+    model_path = 'tradeiq_backend/model.pkl'
+    with open(model_path, 'wb') as f:
         pickle.dump((model, feature_scaler, target_scaler), f)
     
-    print("\n[SUCCESS] Model, feature scaler, and target scaler saved successfully as 'tradeiq_backend/model.pkl'")
+    print(f"\n[SUCCESS] Model and scaler saved successfully to '{model_path}'")
+    print("  - Model type: RandomForestRegressor")
+    print("  - Feature scaler: StandardScaler")
+    print("  - Target scaler (Close only): StandardScaler")
+    print("  - Features: [Open, High, Low, Volume]")
+    print("  - Target: Close")
 else:
     print("Error: Required columns not found in dataset")
     print("Available columns:", df.columns.tolist())

@@ -58,21 +58,30 @@ const normalizeHistoryResponse = (payload) => {
 }
 
 const normalizePredictionResponse = (payload) => {
-  const rawTrend = payload?.trend || payload?.recommendation || 'HOLD'
-  const trend =
-    rawTrend === 'BUY' ? 'UP' : rawTrend === 'SELL' ? 'DOWN' : rawTrend
-  const recommendation =
-    payload?.recommendation ||
-    (trend === 'UP' ? 'BUY' : trend === 'DOWN' ? 'SELL' : 'HOLD')
+  const recommendation = payload?.recommendation || 'HOLD'
+  const trend = payload?.trend || 'Sideways'
+  const currentPrice =
+    payload?.current_price == null ? payload?.current_price : Number(payload.current_price)
+  const predictedPrice =
+    payload?.predicted_price == null ? payload?.predicted_price : Number(payload.predicted_price)
+  const changePercent =
+    payload?.change_percent == null
+      ? (currentPrice ? ((predictedPrice - currentPrice) / currentPrice) * 100 : 0)
+      : Number(payload.change_percent)
+  const confidence = (payload?.confidence || 'LOW').toUpperCase()
+  const isReliable = payload?.is_reliable !== false
+  const warning = payload?.warning || (!isReliable ? 'Unreliable Prediction' : '')
 
   return {
     ...payload,
     trend,
     recommendation,
-    current_price:
-      payload?.current_price == null ? payload?.current_price : Number(payload.current_price),
-    predicted_price:
-      payload?.predicted_price == null ? payload?.predicted_price : Number(payload.predicted_price),
+    current_price: currentPrice,
+    predicted_price: predictedPrice,
+    change_percent: changePercent,
+    confidence,
+    is_reliable: isReliable,
+    warning,
   }
 }
 

@@ -18,7 +18,6 @@ from django.db.models import Count, Avg
 from django.utils import timezone
 from pathlib import Path
 import pandas as pd
-import yfinance as yf
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -26,6 +25,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from io import BytesIO
+from .symbols import resolve_symbol_with_history
 
 from .serializers import (
     PredictionSerializer,
@@ -270,11 +270,10 @@ class StockHistoryAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Fetch data from Yahoo Finance
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period=period)
+            # Fetch data from Yahoo Finance with NSE/BSE fallback for Indian symbols.
+            resolved_symbol, hist = resolve_symbol_with_history(symbol, period=period)
 
-            if hist.empty:
+            if hist is None or hist.empty:
                 return Response(
                     {'error': f'No data found for symbol: {symbol}'},
                     status=status.HTTP_404_NOT_FOUND
@@ -289,7 +288,7 @@ class StockHistoryAPIView(APIView):
                 })
 
             return Response({
-                'symbol': symbol,
+                'symbol': resolved_symbol,
                 'period': period,
                 'data': data
             })
@@ -315,9 +314,8 @@ class StockAPIView(APIView):
         symbol = serializer.validated_data['symbol']
         period = serializer.validated_data.get('period', '1d')
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period=period)
-            if hist.empty:
+            resolved_symbol, hist = resolve_symbol_with_history(symbol, period=period)
+            if hist is None or hist.empty:
                 return Response({'error': 'No data found for symbol'}, status=status.HTTP_404_NOT_FOUND)
             data = []
             for date, row in hist.iterrows():
@@ -329,7 +327,7 @@ class StockAPIView(APIView):
                     'close': float(row['Close']),
                     'volume': int(row['Volume']),
                 })
-            return Response({'symbol': symbol, 'period': period, 'data': data})
+            return Response({'symbol': resolved_symbol, 'period': period, 'data': data})
         except Exception as e:
             return Response({'error': 'Failed to fetch stock data', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -791,10 +789,9 @@ class AdminStockFetchAPIView(APIView):
         symbol = request.query_params.get('symbol', 'AAPL').upper()
         
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period='1mo')
+            resolved_symbol, hist = resolve_symbol_with_history(symbol, period='1mo')
 
-            if hist.empty:
+            if hist is None or hist.empty:
                 return Response({'error': f'No data found for: {symbol}'}, status=404)
 
             rows = []
@@ -809,7 +806,7 @@ class AdminStockFetchAPIView(APIView):
                 })
 
             return Response({
-                'symbol': symbol,
+                'symbol': resolved_symbol,
                 'row_count': len(rows),
                 'data': rows
             })

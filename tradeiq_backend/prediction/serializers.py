@@ -7,10 +7,7 @@ Serializers handle validation and conversion between Python objects and JSON
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Dataset, ModelHistory, PredictionHistory, ActivityLog, UserProfile, Portfolio
-import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
-import numpy as np
+from .symbols import resolve_symbol_with_history
 
 User = get_user_model()
 
@@ -105,11 +102,12 @@ class PredictionSerializer(serializers.Serializer):
         if symbol:
             # Symbol provided - fetch data from Yahoo Finance
             try:
-                ticker = yf.Ticker(symbol)
-                hist = ticker.history(period="2y")
+                resolved_symbol, hist = resolve_symbol_with_history(symbol, period="2y")
 
-                if hist.empty:
+                if hist is None or hist.empty:
                     raise serializers.ValidationError(f"No data found for symbol: {symbol}")
+
+                data['symbol'] = resolved_symbol
 
                 # Get latest data
                 latest = hist.iloc[-1]

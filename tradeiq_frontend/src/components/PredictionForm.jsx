@@ -19,6 +19,27 @@ const PredictionForm = ({ onPredictionComplete }) => {
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
 
+  const formatINR = (value) => {
+    if (value == null || Number.isNaN(Number(value))) return 'N/A'
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2,
+    }).format(Number(value))
+  }
+
+  const getConfidenceClass = (confidence) => {
+    if (confidence === 'HIGH') return 'text-emerald-400'
+    if (confidence === 'MEDIUM') return 'text-amber-400'
+    return 'text-red-400'
+  }
+
+  const getTrendClass = (trend) => {
+    if (trend === 'Uptrend') return 'text-emerald-400'
+    if (trend === 'Downtrend') return 'text-red-400'
+    return 'text-amber-400'
+  }
+
   const handleInputModeChange = (mode) => {
     setInputMode(mode)
     setError(null)
@@ -141,7 +162,7 @@ const PredictionForm = ({ onPredictionComplete }) => {
                 name="symbol"
                 value={formData.symbol}
                 onChange={handleChange}
-                placeholder="e.g., AAPL, MSFT, TSLA"
+                placeholder="e.g., RELIANCE, TCS, INFY"
                 className="input-field w-full"
                 maxLength="20"
               />
@@ -155,7 +176,7 @@ const PredictionForm = ({ onPredictionComplete }) => {
               {/* Open Price Input */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Opening Price ($)
+                  Opening Price (INR)
                 </label>
                 <input
                   type="number"
@@ -172,7 +193,7 @@ const PredictionForm = ({ onPredictionComplete }) => {
               {/* High Price Input */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Highest Price ($)
+                  Highest Price (INR)
                 </label>
                 <input
                   type="number"
@@ -189,7 +210,7 @@ const PredictionForm = ({ onPredictionComplete }) => {
               {/* Low Price Input */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Lowest Price ($)
+                  Lowest Price (INR)
                 </label>
                 <input
                   type="number"
@@ -251,6 +272,13 @@ const PredictionForm = ({ onPredictionComplete }) => {
           <div className="mt-8 pt-8 border-t border-slate-700">
             <h3 className="text-xl font-bold text-white mb-6">Prediction Result</h3>
 
+            {result.warning && (
+              <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/40 rounded-lg text-amber-300">
+                <p className="font-semibold">{result.warning}</p>
+                <p className="text-xs mt-1">Prediction deviates significantly from current price. Use with caution.</p>
+              </div>
+            )}
+
             {/* Stock Symbol Display */}
             {result.symbol && (
               <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
@@ -263,7 +291,7 @@ const PredictionForm = ({ onPredictionComplete }) => {
               <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700">
                 <p className="text-gray-400 text-sm font-medium mb-2">Predicted Price</p>
                 <p className="text-4xl font-bold text-blue-400">
-                  ${result.predicted_price.toFixed(2)}
+                  {formatINR(result.predicted_price)}
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
                   Based on input parameters
@@ -287,30 +315,55 @@ const PredictionForm = ({ onPredictionComplete }) => {
               </div>
             </div>
 
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
+                <p className="text-gray-500 text-xs uppercase">Current Price</p>
+                <p className="text-white font-semibold mt-1">{formatINR(result.current_price)}</p>
+              </div>
+              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
+                <p className="text-gray-500 text-xs uppercase">Change</p>
+                <p className={`font-semibold mt-1 ${(result.change_percent || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {(result.change_percent || 0) >= 0 ? '+' : ''}{(result.change_percent || 0).toFixed(2)}%
+                </p>
+              </div>
+              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
+                <p className="text-gray-500 text-xs uppercase">Trend</p>
+                <p className={`font-semibold mt-1 ${getTrendClass(result.trend)}`}>
+                  {result.trend === 'Uptrend' ? 'Uptrend 📈' : result.trend === 'Downtrend' ? 'Downtrend 📉' : 'Sideways ➖'}
+                </p>
+              </div>
+              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
+                <p className="text-gray-500 text-xs uppercase">Confidence</p>
+                <p className={`font-semibold mt-1 ${getConfidenceClass(result.confidence)}`}>
+                  {result.confidence || 'LOW'}
+                </p>
+              </div>
+            </div>
+
             {/* Technical Indicators */}
             {result.technical_indicators && (
               <div className="mt-6 bg-slate-800/30 rounded-lg p-4 border border-slate-700/50">
                 <p className="text-gray-400 text-xs font-medium mb-3">TECHNICAL INDICATORS</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  {result.technical_indicators.ma_5 && (
+                  {result.technical_indicators.ma_5 != null && (
                     <div>
                       <p className="text-gray-500">MA(5)</p>
-                      <p className="text-white font-semibold">${result.technical_indicators.ma_5.toFixed(2)}</p>
+                      <p className="text-white font-semibold">{formatINR(result.technical_indicators.ma_5)}</p>
                     </div>
                   )}
-                  {result.technical_indicators.ma_10 && (
+                  {result.technical_indicators.ma_10 != null && (
                     <div>
                       <p className="text-gray-500">MA(10)</p>
-                      <p className="text-white font-semibold">${result.technical_indicators.ma_10.toFixed(2)}</p>
+                      <p className="text-white font-semibold">{formatINR(result.technical_indicators.ma_10)}</p>
                     </div>
                   )}
-                  {result.technical_indicators.ma_20 && (
+                  {result.technical_indicators.ma_20 != null && (
                     <div>
                       <p className="text-gray-500">MA(20)</p>
-                      <p className="text-white font-semibold">${result.technical_indicators.ma_20.toFixed(2)}</p>
+                      <p className="text-white font-semibold">{formatINR(result.technical_indicators.ma_20)}</p>
                     </div>
                   )}
-                  {result.technical_indicators.daily_return && (
+                  {result.technical_indicators.daily_return != null && (
                     <div>
                       <p className="text-gray-500">Daily Return</p>
                       <p className="text-white font-semibold">{(result.technical_indicators.daily_return * 100).toFixed(2)}%</p>
@@ -327,15 +380,15 @@ const PredictionForm = ({ onPredictionComplete }) => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <p className="text-gray-500">Open</p>
-                    <p className="text-white font-semibold">${result.input_features.open}</p>
+                    <p className="text-white font-semibold">{formatINR(result.input_features.open)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">High</p>
-                    <p className="text-white font-semibold">${result.input_features.high}</p>
+                    <p className="text-white font-semibold">{formatINR(result.input_features.high)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Low</p>
-                    <p className="text-white font-semibold">${result.input_features.low}</p>
+                    <p className="text-white font-semibold">{formatINR(result.input_features.low)}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Volume</p>

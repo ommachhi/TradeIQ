@@ -4,6 +4,7 @@ Django settings for tradeiq_backend project.
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,7 +14,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-your-secret-key-change-in-
 
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '*')
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
 
 # Application definition
@@ -32,7 +33,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -70,6 +70,27 @@ DATABASES = {
     }
 }
 
+database_url = os.getenv('DATABASE_URL', '').strip()
+if database_url:
+    parsed = urlparse(database_url)
+    scheme = (parsed.scheme or '').lower()
+    if scheme in ('postgres', 'postgresql'):
+        DATABASES['default'] = {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': parsed.path.lstrip('/'),
+            'USER': parsed.username or '',
+            'PASSWORD': parsed.password or '',
+            'HOST': parsed.hostname or '',
+            'PORT': str(parsed.port or ''),
+            'CONN_MAX_AGE': 600,
+            'OPTIONS': {'sslmode': 'require'},
+        }
+    elif scheme == 'sqlite':
+        DATABASES['default'] = {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': parsed.path or (BASE_DIR / 'db.sqlite3'),
+        }
+
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -106,6 +127,18 @@ if cors_origins_env.strip():
     ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+csrf_trusted_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+if csrf_trusted_origins_env.strip():
+    CSRF_TRUSTED_ORIGINS = [
+        origin.strip() for origin in csrf_trusted_origins_env.split(',') if origin.strip()
+    ]
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # REST Framework Configuration
 REST_FRAMEWORK = {
