@@ -111,7 +111,17 @@ const PredictionForm = ({ onPredictionComplete }) => {
         onPredictionComplete(prediction)
       }
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to get prediction')
+      const payload = err.response?.data
+      let message = payload?.detail || payload?.error || err.message || 'Failed to get prediction'
+      if (payload?.details && typeof payload.details === 'object') {
+        const details = Object.entries(payload.details)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' ') : v}`)
+          .join(' | ')
+        if (details) {
+          message = `${message} (${details})`
+        }
+      }
+      setError(message)
     } finally {
       setLoading(false)
     }
