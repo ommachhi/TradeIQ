@@ -1,6 +1,23 @@
 import { useState } from 'react'
 import { predictionAPI } from '../services/api'
 
+const VALID_SYMBOL_REGEX = /^(?:[A-Z]{1,10}|[A-Z]{1,10}\.(?:NS|BO))$/
+const SUGGESTED_SYMBOLS = ['AAPL', 'TSLA', 'MSFT', 'RELIANCE.NS', 'TCS.NS', 'INFY.NS']
+
+const friendlyError = (err) => {
+  const message = err?.message || ''
+  if (/invalid stock symbol/i.test(message)) {
+    return 'Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS'
+  }
+  if (/timed out/i.test(message) || /timeout/i.test(message)) {
+    return 'Request timed out. Please try again with a valid symbol.'
+  }
+  if (/network/i.test(message)) {
+    return 'Unable to reach server. Please check your connection and try again.'
+  }
+  return message || 'Failed to get prediction'
+}
+
 /**
  * PredictionForm Component
  * Form for inputting stock features and getting predictions
@@ -76,7 +93,11 @@ const PredictionForm = ({ onPredictionComplete }) => {
         if (!formData.symbol) {
           throw new Error('Stock symbol is required')
         }
-        predictionData = { symbol: formData.symbol.toUpperCase() }
+        const normalizedSymbol = formData.symbol.trim().toUpperCase()
+        if (!VALID_SYMBOL_REGEX.test(normalizedSymbol)) {
+          throw new Error('Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS')
+        }
+        predictionData = { symbol: normalizedSymbol }
       } else {
         // Manual input prediction
         if (!formData.open || !formData.high || !formData.low || !formData.volume) {
@@ -111,17 +132,7 @@ const PredictionForm = ({ onPredictionComplete }) => {
         onPredictionComplete(prediction)
       }
     } catch (err) {
-      const payload = err.response?.data
-      let message = payload?.detail || payload?.error || err.message || 'Failed to get prediction'
-      if (payload?.details && typeof payload.details === 'object') {
-        const details = Object.entries(payload.details)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' ') : v}`)
-          .join(' | ')
-        if (details) {
-          message = `${message} (${details})`
-        }
-      }
-      setError(message)
+      setError(friendlyError(err))
     } finally {
       setLoading(false)
     }
@@ -172,12 +183,18 @@ const PredictionForm = ({ onPredictionComplete }) => {
                 name="symbol"
                 value={formData.symbol}
                 onChange={handleChange}
-                placeholder="e.g., RELIANCE, TCS, INFY"
+                placeholder="e.g., AAPL or RELIANCE.NS"
                 className="input-field w-full"
                 maxLength="20"
+                list="symbol-suggestions"
               />
+              <datalist id="symbol-suggestions">
+                {SUGGESTED_SYMBOLS.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
               <p className="text-xs text-gray-500 mt-1">
-                Enter a stock symbol to fetch live data and get prediction
+                Accepted formats: US (AAPL, TSLA), India (RELIANCE.NS, TCS.NS)
               </p>
             </div>
           ) : (

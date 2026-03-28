@@ -6,6 +6,35 @@ const API_BASE_URL =
     ? 'https://tradeiq-5.onrender.com/api'
     : 'http://localhost:8000/api')
 const AUTH_STATE_EVENT = 'tradeiq-auth-changed'
+const REQUEST_TIMEOUT_MS = 5000
+
+const INDIAN_SYMBOL_MAP = {
+  INFOSYS: 'INFY.NS',
+  INFY: 'INFY.NS',
+  RELIANCE: 'RELIANCE.NS',
+  TCS: 'TCS.NS',
+  HDFCBANK: 'HDFCBANK.NS',
+  ICICIBANK: 'ICICIBANK.NS',
+  SBIN: 'SBIN.NS',
+  ITC: 'ITC.NS',
+  LT: 'LT.NS',
+  WIPRO: 'WIPRO.NS',
+  HCLTECH: 'HCLTECH.NS',
+}
+
+const normalizeStockSymbol = (symbol) => {
+  const cleaned = String(symbol || '').trim().toUpperCase()
+  if (!cleaned) {
+    return cleaned
+  }
+  if (cleaned.includes('.')) {
+    return cleaned
+  }
+  if (INDIAN_SYMBOL_MAP[cleaned]) {
+    return INDIAN_SYMBOL_MAP[cleaned]
+  }
+  return cleaned
+}
 
 const emitAuthStateChange = () => {
   window.dispatchEvent(new Event(AUTH_STATE_EVENT))
@@ -23,7 +52,7 @@ const normalizeAuthResponse = (payload) => {
 }
 
 const normalizeHistoryPoint = (point) => {
-  const date = point?.date || point?.Date || ''
+  const date = point?.time || point?.date || point?.Date || ''
   const open = Number(point?.open ?? point?.Open ?? 0)
   const high = Number(point?.high ?? point?.High ?? 0)
   const low = Number(point?.low ?? point?.Low ?? 0)
@@ -61,6 +90,47 @@ const normalizeHistoryResponse = (payload) => {
   }
 }
 
+const unwrapApiEnvelope = (payload) => {
+  if (payload && typeof payload === 'object' && 'success' in payload) {
+    if (payload.success) {
+      return payload.data || {}
+    }
+    const apiError = new Error(payload.error || 'Request failed')
+    apiError.isApiEnvelopeError = true
+    apiError.response = {
+      data: {
+        error: payload.error || 'Request failed',
+        details: payload.data?.details || null,
+      },
+    }
+    throw apiError
+  }
+  return payload
+}
+
+const mapApiErrorMessage = (error, fallbackMessage = 'Request failed') => {
+  if (error?.code === 'ECONNABORTED') {
+    return 'Invalid stock or server timeout. Try again.'
+  }
+
+  const payload = error?.response?.data
+  const serverMessage = payload?.error || payload?.detail || payload?.message
+  if (serverMessage) {
+    if (/timeout|timed out/i.test(serverMessage)) {
+      return 'Invalid stock or server timeout. Try again.'
+    }
+    if (/invalid stock symbol/i.test(serverMessage)) {
+      return 'Invalid stock or server timeout. Try again.'
+    }
+    return serverMessage
+  }
+
+  if (error?.message) {
+    return error.message
+  }
+  return fallbackMessage
+}
+
 const normalizePredictionResponse = (payload) => {
   const recommendation = payload?.recommendation || 'HOLD'
   const trend = payload?.trend || 'Sideways'
@@ -91,6 +161,7 @@ const normalizePredictionResponse = (payload) => {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: REQUEST_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -195,29 +266,55 @@ export const authHelpers = {
  * Prediction APIs
  */
 export const predictionAPI = {
-  getHistorical: async (symbol) => {
-    const response = await api.get('/stock/', {
-      params: { symbol, period: '5y' },
-    })
-    return normalizeHistoryResponse(response.data)
+  getHistorical: async (symbol, period = '5y') => {
+    const normalizedSymbol = normalizeStockSymbol(symbol)
+    try {
+      const response = await api.get('/stock/', {
+        params: { symbol: normalizedSymbol, period },
+      })
+      const payload = unwrapApiEnvelope(response.data)
+      return normalizeHistoryResponse(payload)
+    } catch (error) {
+      const mapped = new Error(mapApiErrorMessage(error, 'Failed to fetch stock history'))
+      mapped.response = error?.response
+      throw mapped
+    }
   },
 
   getLivePrice: async (symbol) => {
-    const response = await api.get('/stock/', {
-      params: { symbol, period: '5d' },
-    })
-    const normalized = normalizeHistoryResponse(response.data)
-    const latest = normalized.history[normalized.history.length - 1]
+    const normalizedSymbol = normalizeStockSymbol(symbol)
+    try {
+      const response = await api.get('/stock/', {
+        params: { symbol: normalizedSymbol, period: '5d' },
+      })
+      const payload = unwrapApiEnvelope(response.data)
+      const normalized = normalizeHistoryResponse(payload)
+      const latest = normalized.history[normalized.history.length - 1]
 
-    return {
-      symbol: normalized.symbol || symbol.toUpperCase(),
-      price: latest?.close ?? null,
+      return {
+        symbol: normalized.symbol || normalizedSymbol,
+        price: latest?.close ?? null,
+      }
+    } catch (error) {
+      const mapped = new Error(mapApiErrorMessage(error, 'Failed to fetch live price'))
+      mapped.response = error?.response
+      throw mapped
     }
   },
 
   predict: async (payload) => {
-    const response = await api.post('/predict/', payload)
-    return normalizePredictionResponse(response.data)
+    const normalizedPayload = payload?.symbol
+      ? { ...payload, symbol: normalizeStockSymbol(payload.symbol) }
+      : payload
+    try {
+      const response = await api.post('/predict/', normalizedPayload)
+      const data = unwrapApiEnvelope(response.data)
+      return normalizePredictionResponse(data)
+    } catch (error) {
+      const mapped = new Error(mapApiErrorMessage(error, 'Failed to get prediction'))
+      mapped.response = error?.response
+      throw mapped
+    }
   }
 }
 
@@ -321,7 +418,7 @@ export const getHistoricalData = async () => {
 
 export const healthCheck = async () => {
   const response = await api.get('/health/')
-  return response.data
+  return unwrapApiEnvelope(response.data)
 }
 
 export default api

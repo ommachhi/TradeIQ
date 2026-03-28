@@ -52,6 +52,14 @@ from .models import Dataset, ModelHistory, PredictionHistory, ActivityLog, UserP
 User = get_user_model()
 
 
+def api_success(data=None, http_status=status.HTTP_200_OK):
+    return Response({'success': True, 'data': data or {}, 'error': ''}, status=http_status)
+
+
+def api_error(message, http_status=status.HTTP_400_BAD_REQUEST, data=None):
+    return Response({'success': False, 'data': data or {}, 'error': message}, status=http_status)
+
+
 def _get_user_role(user, default='investor'):
     try:
         return user.userprofile.role
@@ -225,30 +233,42 @@ class PredictionAPIView(APIView):
             serializer = PredictionSerializer(data=request.data)
 
             if not serializer.is_valid():
-                return Response(
-                    {'error': 'Invalid input data', 'details': serializer.errors},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                details = serializer.errors
+                default_message = 'Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS'
+                message = default_message
+                if isinstance(details, dict):
+                    non_field = details.get('non_field_errors')
+                    if non_field and isinstance(non_field, list) and non_field[0]:
+                        message = str(non_field[0])
+                return api_error(message, http_status=status.HTTP_400_BAD_REQUEST, data={'details': details})
 
             validated_data = serializer.validated_data
 
             # run prediction
             result = self._run_prediction(validated_data, request.user)
-            return Response(result)
+            return api_success(result)
 
-        except Exception as e:
-            return Response({'error': 'Prediction failed', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except TimeoutError:
+            return api_error('Prediction request timed out. Please try again.', http_status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except Exception:
+            return api_error('Prediction failed. Please try again.', http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def get(self, request):
         # allow GET /api/predict/?symbol=AAPL for convenience
         symbol = request.query_params.get('symbol')
         if not symbol:
-            return Response({'error': 'Symbol query parameter required'}, status=status.HTTP_400_BAD_REQUEST)
+            return api_error('Symbol query parameter required', http_status=status.HTTP_400_BAD_REQUEST)
         validated = {'symbol': symbol}
         serializer = PredictionSerializer(data=validated)
         if not serializer.is_valid():
-            return Response({'error': 'Invalid input data', 'details': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(self._run_prediction(serializer.validated_data, request.user))
+            details = serializer.errors
+            message = 'Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS'
+            if isinstance(details, dict):
+                non_field = details.get('non_field_errors')
+                if non_field and isinstance(non_field, list) and non_field[0]:
+                    message = str(non_field[0])
+            return api_error(message, http_status=status.HTTP_400_BAD_REQUEST, data={'details': details})
+        return api_success(self._run_prediction(serializer.validated_data, request.user))
 
 
 class StockHistoryAPIView(APIView):
@@ -265,39 +285,34 @@ class StockHistoryAPIView(APIView):
         try:
             # Validate symbol
             if not symbol or len(symbol) > 20:
-                return Response(
-                    {'error': 'Invalid symbol'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                return api_error('Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS', http_status=status.HTTP_400_BAD_REQUEST)
 
             # Fetch data from Yahoo Finance with NSE/BSE fallback for Indian symbols.
             resolved_symbol, hist = resolve_symbol_with_history(symbol, period=period)
 
             if hist is None or hist.empty:
-                return Response(
-                    {'error': f'No data found for symbol: {symbol}'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                return api_error('Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS', http_status=status.HTTP_404_NOT_FOUND)
 
             # Format data for charts
             data = []
             for date, row in hist.iterrows():
+                date_str = date.strftime('%Y-%m-%d')
                 data.append({
-                    'date': date.strftime('%Y-%m-%d'),
+                    'time': date_str,
+                    'date': date_str,
                     'close': round(float(row['Close']), 2)
                 })
 
-            return Response({
+            return api_success({
                 'symbol': resolved_symbol,
                 'period': period,
                 'data': data
             })
 
-        except Exception as e:
-            return Response(
-                {'error': 'Failed to fetch stock data', 'message': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        except TimeoutError:
+            return api_error('Invalid stock symbol or timeout', http_status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except Exception:
+            return api_error('Failed to fetch stock data.', http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # Stock lookup endpoint
@@ -310,26 +325,39 @@ class StockAPIView(APIView):
     def get(self, request):
         serializer = StockDataSerializer(data=request.query_params)
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            details = serializer.errors
+            message = 'Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS'
+            if isinstance(details, dict):
+                symbol_error = details.get('symbol')
+                if symbol_error and isinstance(symbol_error, list) and symbol_error[0]:
+                    message = str(symbol_error[0])
+            return api_error(message, http_status=status.HTTP_400_BAD_REQUEST, data={'details': details})
         symbol = serializer.validated_data['symbol']
         period = serializer.validated_data.get('period', '1d')
         try:
             resolved_symbol, hist = resolve_symbol_with_history(symbol, period=period)
             if hist is None or hist.empty:
-                return Response({'error': 'No data found for symbol'}, status=status.HTTP_404_NOT_FOUND)
+                return api_error(
+                    'Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS',
+                    http_status=status.HTTP_404_NOT_FOUND
+                )
             data = []
             for date, row in hist.iterrows():
+                date_str = date.strftime('%Y-%m-%d')
                 data.append({
-                    'date': date.strftime('%Y-%m-%d'),
+                    'time': date_str,
+                    'date': date_str,
                     'open': float(row['Open']),
                     'high': float(row['High']),
                     'low': float(row['Low']),
                     'close': float(row['Close']),
                     'volume': int(row['Volume']),
                 })
-            return Response({'symbol': resolved_symbol, 'period': period, 'data': data})
-        except Exception as e:
-            return Response({'error': 'Failed to fetch stock data', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return api_success({'symbol': resolved_symbol, 'period': period, 'data': data})
+        except TimeoutError:
+            return api_error('Invalid stock symbol or timeout', http_status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except Exception:
+            return api_error('Failed to fetch stock data.', http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # Admin Views

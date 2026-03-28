@@ -7,7 +7,7 @@ Serializers handle validation and conversion between Python objects and JSON
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Dataset, ModelHistory, PredictionHistory, ActivityLog, UserProfile, Portfolio
-from .symbols import resolve_symbol_with_history
+from .symbols import resolve_symbol_with_history, is_valid_stock_symbol_format
 
 User = get_user_model()
 
@@ -100,12 +100,20 @@ class PredictionSerializer(serializers.Serializer):
         manual_fields = ['open', 'high', 'low', 'volume']
 
         if symbol:
+            symbol = symbol.strip().upper()
+            if not is_valid_stock_symbol_format(symbol):
+                raise serializers.ValidationError(
+                    "Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS"
+                )
+
             # Symbol provided - fetch data from Yahoo Finance
             try:
                 resolved_symbol, hist = resolve_symbol_with_history(symbol, period="2y")
 
                 if hist is None or hist.empty:
-                    raise serializers.ValidationError(f"No data found for symbol: {symbol}")
+                    raise serializers.ValidationError(
+                        "Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS"
+                    )
 
                 data['symbol'] = resolved_symbol
 
@@ -120,8 +128,16 @@ class PredictionSerializer(serializers.Serializer):
                 # Calculate additional features
                 data.update(self._calculate_features(hist))
 
-            except Exception as e:
-                raise serializers.ValidationError(f"Error fetching data for {symbol}: {str(e)}")
+            except TimeoutError:
+                raise serializers.ValidationError(
+                    "Symbol lookup timed out. Please try again with a valid symbol like AAPL, RELIANCE.NS, TCS.NS"
+                )
+            except serializers.ValidationError:
+                raise
+            except Exception:
+                raise serializers.ValidationError(
+                    "Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS"
+                )
         else:
             # Manual input - validate all fields present
             missing_fields = [field for field in manual_fields if field not in data]
@@ -248,6 +264,14 @@ class StockDataSerializer(serializers.Serializer):
     """Serializer to validate stock query parameters"""
     symbol = serializers.CharField(max_length=20)
     period = serializers.CharField(default='1y', max_length=10)
+
+    def validate_symbol(self, value):
+        cleaned = (value or '').strip().upper()
+        if not is_valid_stock_symbol_format(cleaned):
+            raise serializers.ValidationError(
+                "Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS"
+            )
+        return cleaned
 
     def validate_period(self, value):
         valid_periods = ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max']

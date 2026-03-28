@@ -2,7 +2,53 @@
 
 from __future__ import annotations
 
+import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from datetime import datetime, timedelta
 import yfinance as yf
+
+_CACHE: dict[tuple[str, str], tuple[str, object, datetime]] = {}
+_CACHE_TTL_SECONDS = 120
+_FETCH_TIMEOUT_SECONDS = 4
+
+# US tickers: AAPL, TSLA, MSFT
+# India tickers: RELIANCE.NS, TCS.BO
+SYMBOL_PATTERN = re.compile(r"^(?:[A-Z]{1,10}|[A-Z]{1,10}\.(?:NS|BO))$")
+
+
+def is_valid_stock_symbol_format(symbol: str) -> bool:
+    cleaned = (symbol or "").strip().upper()
+    return bool(cleaned and SYMBOL_PATTERN.fullmatch(cleaned))
+
+
+def _cache_get(symbol: str, period: str):
+    key = (symbol, period)
+    cached = _CACHE.get(key)
+    if not cached:
+        return None, None
+    resolved_symbol, hist, expires_at = cached
+    if datetime.utcnow() >= expires_at:
+        _CACHE.pop(key, None)
+        return None, None
+    return resolved_symbol, hist
+
+
+def _cache_set(symbol: str, period: str, resolved_symbol: str, hist):
+    key = (symbol, period)
+    _CACHE[key] = (
+        resolved_symbol,
+        hist,
+        datetime.utcnow() + timedelta(seconds=_CACHE_TTL_SECONDS),
+    )
+
+
+def _run_with_timeout(func, *args, timeout_seconds=_FETCH_TIMEOUT_SECONDS, **kwargs):
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(func, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FuturesTimeoutError as exc:
+            raise TimeoutError(f"Stock data provider timeout after {timeout_seconds}s") from exc
 
 
 def _fetch_history(candidate: str, period: str):
@@ -10,14 +56,15 @@ def _fetch_history(candidate: str, period: str):
     errors = []
 
     try:
-        hist = yf.Ticker(candidate).history(period=period)
+        hist = _run_with_timeout(yf.Ticker(candidate).history, period=period)
         if hist is not None and not hist.empty:
             return hist
     except Exception as exc:  # pragma: no cover
         errors.append(exc)
 
     try:
-        hist = yf.download(
+        hist = _run_with_timeout(
+            yf.download,
             candidate,
             period=period,
             progress=False,
@@ -59,7 +106,15 @@ def _candidate_symbols(symbol: str) -> list[str]:
 
 def resolve_symbol_with_history(symbol: str, period: str = "2y"):
     """Return (resolved_symbol, history_df) using Yahoo Finance fallback candidates."""
-    candidates = _candidate_symbols(symbol)
+    cleaned = (symbol or "").strip().upper()
+    if not is_valid_stock_symbol_format(cleaned):
+        return None, None
+
+    cached_symbol, cached_hist = _cache_get(cleaned, period)
+    if cached_symbol and cached_hist is not None:
+        return cached_symbol, cached_hist
+
+    candidates = _candidate_symbols(cleaned)
     if not candidates:
         return None, None
 
@@ -69,6 +124,7 @@ def resolve_symbol_with_history(symbol: str, period: str = "2y"):
             try:
                 hist = _fetch_history(candidate, resolved_period)
                 if hist is not None and not hist.empty:
+                    _cache_set(cleaned, period, candidate, hist)
                     return candidate, hist
             except Exception as exc:  # pragma: no cover - network/data provider errors
                 last_exception = exc

@@ -71,55 +71,6 @@ const Navbar = () => {
             </span>
           </Link>
 
-          {/* Navigation Links */}
-          <div className="flex space-x-8">
-            <Link
-              to="/"
-              className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 relative group"
-            >
-              Home
-              <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 group-hover:w-full transition-all duration-300"></span>
-            </Link>
-
-            {isAuthenticated && (
-              <>
-                <Link
-                  to="/dashboard"
-                  className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 relative group"
-                >
-                  Dashboard
-                  <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 group-hover:w-full transition-all duration-300"></span>
-                </Link>
-
-                <Link
-                  to="/predict"
-                  className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 relative group"
-                >
-                  Predict
-                  <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 group-hover:w-full transition-all duration-300"></span>
-                </Link>
-
-                <Link
-                  to="/analysis"
-                  className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 relative group"
-                >
-                  Analysis
-                  <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 group-hover:w-full transition-all duration-300"></span>
-                </Link>
-
-                {userRole === 'admin' && (
-                  <Link
-                    to="/admin"
-                    className="text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 relative group"
-                  >
-                    Admin
-                    <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 group-hover:w-full transition-all duration-300"></span>
-                  </Link>
-                )}
-              </>
-            )}
-          </div>
-
           {/* Auth Buttons */}
           <div className="flex items-center space-x-4">
             {!isAuthenticated ? (
