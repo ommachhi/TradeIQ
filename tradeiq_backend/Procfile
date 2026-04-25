@@ -1,1 +1,0 @@
-web: gunicorn tradeiq_backend.wsgi

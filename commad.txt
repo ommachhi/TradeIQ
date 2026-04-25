@@ -1,5 +1,0 @@
-backend:
-cd e:\TredalQ\tradeiq_backend ; e:\TredalQ\.venv\Scripts\python.exe manage.py runserver
-
-fronted:
-$PWD = 'e:\TredalQ\tradeiq_frontend' ; Push-Location $PWD ; npm.cmd run dev
