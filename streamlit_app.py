@@ -5,9 +5,14 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import os
+import sys
 import pickle
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+# Log version info for debugging
+print(f"Python Version: {sys.version}")
+print(f"Streamlit Version: {st.__version__}")
 
 # --- SYMBOLS LOGIC (Inlined for reliability) ---
 SYMBOL_PATTERN = re.compile(r"^(?:[A-Z]{1,10}|[A-Z]{1,10}\.(?:NS|BO))$")
