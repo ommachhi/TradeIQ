@@ -4,3 +4,12 @@ numpy
 yfinance
 plotly
 scikit-learn
+joblib
+requests
+python-dotenv
+reportlab
+sqlalchemy
+streamlit-authenticator
+bcrypt
+pymongo
+psycopg2-binary

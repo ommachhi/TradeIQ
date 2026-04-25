@@ -1,596 +1,526 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { adminAPI, authHelpers } from '../services/api';
-import { 
-  FiUsers, FiPieChart, FiTrendingUp, FiCpu, 
-  FiDatabase, FiSettings, FiLogOut, FiMenu, 
-  FiX, FiActivity, FiSearch, FiCheckCircle, 
-  FiAlertCircle, FiClock, FiDownload, FiUpload,
-  FiUserPlus, FiShield, FiUserCheck, FiTarget,
-  FiBarChart2, FiLayers, FiRefreshCw, FiArrowUp,
-  FiArrowDown, FiSmartphone, FiMonitor, FiGlobe,
-  FiSave, FiTrash2, FiInfo, FiLock, FiUnlock
-} from 'react-icons/fi';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, AreaChart, Area,
-  BarChart, Bar, Legend, Cell, PieChart, Pie,
-  ComposedChart, Scatter
-} from 'recharts';
+﻿import React, { useEffect, useMemo, useState } from 'react'
+import { adminAPI, authAPI, authHelpers } from '../services/api'
+import {
+  FiActivity,
+  FiAlertCircle,
+  FiCheckCircle,
+  FiClock,
+  FiCpu,
+  FiDatabase,
+  FiGlobe,
+  FiLayers,
+  FiLock,
+  FiLogOut,
+  FiMenu,
+  FiPieChart,
+  FiSearch,
+  FiShield,
+  FiTarget,
+  FiTrash2,
+  FiTrendingUp,
+  FiUnlock,
+  FiUsers,
+  FiX,
+} from 'react-icons/fi'
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-/**
- * Enterprise-Grade TradeIQ Admin Intelligence Suite
- * Fixed version with resolved navigation and fully functional user management.
- */
+const NAV = [
+  ['overview', 'Dashboard', FiPieChart],
+  ['users', 'User Management', FiUsers],
+  ['datalake', 'Stock Data', FiDatabase],
+  ['modelforge', 'ML Control', FiCpu],
+  ['inference', 'Prediction Logs', FiLayers],
+  ['compliance', 'Activity Logs', FiShield],
+]
+
+const TITLES = {
+  overview: ['Sovereign Operations', 'Admin Dashboard'],
+  users: ['User Management', 'User Management'],
+  datalake: ['Stock Data', 'Stock Data Records'],
+  modelforge: ['ML Control', 'Model Forge'],
+  inference: ['Prediction Logs', 'Prediction Audit Logs'],
+  compliance: ['Activity Logs', 'System Compliance Logs'],
+}
+
+const fmtDate = (v) => {
+  if (!v) return 'Not available'
+  try {
+    return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(v))
+  } catch {
+    return v
+  }
+}
+
+const fmtNum = (v, d = 2) =>
+  v == null || Number.isNaN(Number(v))
+    ? '--'
+    : Number(v).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d })
+const fmtInt = (v) => (v == null || Number.isNaN(Number(v)) ? '--' : Number(v).toLocaleString('en-IN'))
+const fmtScore = (v) => (v == null || Number.isNaN(Number(v)) ? '--' : Number(v).toFixed(3))
+const hasMetric = (v) => v != null && !Number.isNaN(Number(v))
+const roleLabel = (v) => ({ admin: 'Admin', analyst: 'Analyst', researcher: 'Researcher', investor: 'Investor' }[v] || 'Investor')
+const userLabel = (u) => `${u?.first_name || ''} ${u?.last_name || ''}`.trim() || u?.username || 'Unknown User'
+
+const EmptyState = ({ title, text }) => (
+  <div className="flex min-h-[220px] items-center justify-center rounded-[1.75rem] border border-dashed border-slate-700/70 bg-slate-900/30 px-8 text-center">
+    <div>
+      <p className="text-lg font-bold text-white">{title}</p>
+      <p className="mt-2 text-sm text-slate-400">{text}</p>
+    </div>
+  </div>
+)
+
+const Metric = ({ label, value, note, Icon, tone }) => {
+  const styles = {
+    blue: ['border-l-blue-500', 'bg-blue-500/10', 'text-blue-400'],
+    purple: ['border-l-purple-500', 'bg-purple-500/10', 'text-purple-400'],
+    emerald: ['border-l-emerald-500', 'bg-emerald-500/10', 'text-emerald-400'],
+    amber: ['border-l-amber-500', 'bg-amber-500/10', 'text-amber-400'],
+  }[tone]
+
+  return (
+    <div className={`rounded-[1.75rem] border border-slate-800/80 border-l-4 ${styles[0]} bg-[#0c1220]/80 p-6`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="mb-2 text-xs font-black uppercase tracking-[0.22em] text-slate-500">{label}</p>
+          <p className="text-3xl font-black text-white">{value}</p>
+          <p className="mt-3 text-xs text-slate-400">{note}</p>
+        </div>
+        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${styles[1]} ${styles[2]}`}>
+          <Icon size={22} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const ProfileModal = ({ user, onClose }) =>
+  !user ? null : (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-[2rem] border border-slate-800 bg-[#0c1220] p-8 shadow-2xl shadow-black/40">
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-purple-700 text-2xl font-black text-white">
+              {(user.username || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">Profile Details</p>
+              <h3 className="mt-2 text-2xl font-black text-white">{userLabel(user)}</h3>
+              <p className="text-sm text-slate-400">@{user.username || 'unknown'}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl border border-slate-700 p-2 text-slate-400 transition-colors hover:border-slate-500 hover:text-white">
+            <FiX size={20} />
+          </button>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Username</p><p className="mt-2 text-lg font-bold text-white">{user.username || '--'}</p></div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Email</p><p className="mt-2 break-all text-lg font-bold text-white">{user.email || 'Not added'}</p></div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Role</p><p className="mt-2 text-lg font-bold text-white">{roleLabel(user.role)}</p></div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Status</p><p className={`mt-2 text-lg font-bold ${user.is_active ? 'text-emerald-400' : 'text-red-400'}`}>{user.is_active ? 'Active' : 'Blocked'}</p></div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 md:col-span-2"><p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Joined On</p><p className="mt-2 text-lg font-bold text-white">{fmtDate(user.date_joined)}</p></div>
+        </div>
+      </div>
+    </div>
+  )
+
 const TradeIQAdmin = () => {
-  const apiBaseUrl =
-    import.meta.env.VITE_API_BASE_URL ||
-    (import.meta.env.PROD
-      ? 'https://tradeiq-5.onrender.com/api'
-      : 'http://localhost:8000/api');
+  const [activeTab, setActiveTab] = useState('overview')
+  const [collapsed, setCollapsed] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [processing, setProcessing] = useState(false)
+  const [data, setData] = useState({ stats: null, users: [], datasets: [], models: [], logs: [], predictions: [] })
+  const [feedback, setFeedback] = useState({ type: '', msg: '' })
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedUser, setSelectedUser] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [stockSearch, setStockSearch] = useState('')
+  const [stockPreview, setStockPreview] = useState(null)
+  const [latencyMs, setLatencyMs] = useState(null)
 
-  // Navigation State
-  const [activeTab, setActiveTab] = useState('overview');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  
-  // Data State
-  const [allData, setAllData] = useState({
-    stats: null,
-    users: [],
-    datasets: [],
-    models: [],
-    logs: [],
-    predictions: [],
-    systemHealth: { cpu: '12%', ram: '1.4GB', latency: '42ms', uptime: '99.9%' }
-  });
-  
-  // UI State
-  const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
-  const [feedback, setFeedback] = useState({ type: null, msg: '' });
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [stockSearch, setStockSearch] = useState('');
-  const [stockPreview, setStockPreview] = useState(null);
+  const q = searchTerm.trim().toLowerCase()
+  const [title, heading] = TITLES[activeTab] || TITLES.overview
 
-  // Initialize
-  useEffect(() => {
-    fetchIntelligenceData();
-  }, []);
+  const showFeedback = (type, msg) => {
+    setFeedback({ type, msg })
+    window.setTimeout(() => setFeedback({ type: '', msg: '' }), 5000)
+  }
 
-  const fetchIntelligenceData = async () => {
+  const refresh = async () => {
     try {
-      setLoading(true);
-      
-      // Independent fetch to prevent one failure from blocking everything
-      const results = await Promise.allSettled([
+      setLoading(true)
+      const started = performance.now()
+      const [statsRes, usersRes, datasetsRes, modelsRes, logsRes, predictionsRes, profileRes] = await Promise.allSettled([
         adminAPI.getDashboardStats(),
         adminAPI.getUsers(),
         adminAPI.getDatasets(),
         adminAPI.getModelHistory(),
-        adminAPI.getActivityLogs()
-      ]);
-
-      const [statsRes, usersRes, datasetsRes, modelsRes, logsRes] = results;
-
-      // Native fetch for predictions
-      let predictions = [];
-      try {
-        const resp = await fetch(`${apiBaseUrl}/admin/predictions/`, {
-          headers: { 'Authorization': `Bearer ${authHelpers.getToken()}` }
-        });
-        if (resp.ok) predictions = await resp.json();
-      } catch (e) {
-        console.error("Prediction fetch failed", e);
-      }
-
-      setAllData({
+        adminAPI.getActivityLogs(),
+        adminAPI.getPredictions(),
+        authAPI.getProfile(),
+      ])
+      setLatencyMs(Math.max(1, Math.round(performance.now() - started)))
+      setData({
         stats: statsRes.status === 'fulfilled' ? statsRes.value : null,
         users: usersRes.status === 'fulfilled' ? usersRes.value : [],
         datasets: datasetsRes.status === 'fulfilled' ? datasetsRes.value : [],
         models: modelsRes.status === 'fulfilled' ? modelsRes.value : [],
         logs: logsRes.status === 'fulfilled' ? logsRes.value : [],
-        predictions: predictions,
-        systemHealth: { cpu: '14%', ram: '1.2GB', latency: '38ms', uptime: '99.99%' }
-      });
-
+        predictions: predictionsRes.status === 'fulfilled' ? predictionsRes.value : [],
+      })
+      if (profileRes.status === 'fulfilled') {
+        setProfile(profileRes.value)
+        authHelpers.setAuthData(authHelpers.getToken(), profileRes.value.role || authHelpers.getUserRole(), profileRes.value.username || authHelpers.getUsername())
+      }
     } catch (err) {
-      showFeedback('error', 'Critical System Failure: Unable to handshake with core API.');
+      console.error(err)
+      showFeedback('error', 'Admin data load nahi ho paaya. Thoda refresh karke dobara try karo.')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  const showFeedback = (type, msg) => {
-    setFeedback({ type, msg });
-    setTimeout(() => setFeedback({ type: null, msg: '' }), 5000);
-  };
+  useEffect(() => {
+    refresh()
+  }, [])
 
-  const handleAction = async (actionFn, successMsg) => {
+  const runAction = async (fn, successMsg) => {
     try {
-      setProcessing(true);
-      await actionFn();
-      showFeedback('success', successMsg);
-      await fetchIntelligenceData(); // Refresh data after action
+      setProcessing(true)
+      await fn()
+      showFeedback('success', successMsg)
+      await refresh()
     } catch (err) {
-      const errorMsg = err.response?.data?.error || err.response?.data?.detail || 'Operation failed';
-      showFeedback('error', errorMsg);
+      showFeedback('error', err.response?.data?.error || err.response?.data?.detail || err.message || 'Operation failed')
     } finally {
-      setProcessing(false);
+      setProcessing(false)
     }
-  };
+  }
 
-  // Derived Analytics
-  const userActivityData = useMemo(() => {
-    const counts = {};
-    (allData.predictions || []).forEach(p => {
-      counts[p.username || 'System'] = (counts[p.username || 'System'] || 0) + 1;
-    });
-    return Object.entries(counts)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }, [allData.predictions]);
+  const retrainModel = async () => {
+    try {
+      setProcessing(true)
+      const res = await adminAPI.retrainModel({ model_name: 'TradeIQ_RF_v2' })
+      const m = res?.metrics || {}
+      showFeedback('success', `Retrain complete. Test R2 ${fmtScore(m.r_squared)}, RMSE ${fmtNum(m.rmse)}, gap ${fmtScore(m.overfit_gap)}`)
+      await refresh()
+    } catch (err) {
+      showFeedback('error', err.response?.data?.error || err.response?.data?.message || 'Model retraining failed')
+    } finally {
+      setProcessing(false)
+    }
+  }
 
-  // Sub-Components
-  const MetricCard = ({ label, value, trend, icon: Icon, color }) => (
-    <div className={`group glass-card p-6 border-l-4 border-l-${color}-500 hover:scale-[1.02] transition-all duration-300 relative overflow-hidden`}>
-      <div className={`absolute top-0 right-0 w-24 h-24 bg-${color}-500/5 rounded-full -mr-8 -mt-8 group-hover:bg-${color}-500/10 transition-colors`}></div>
-      <div className="flex justify-between">
-        <div>
-          <p className="text-slate-400 text-xs font-black uppercase tracking-[2px] mb-1">{label}</p>
-          <p className="text-3xl font-black text-white mb-2">{value ?? '---'}</p>
-          <div className="flex items-center text-[10px] font-bold">
-            {trend && (
-              <span className={trend.startsWith('+') ? 'text-green-500' : 'text-red-500'}>
-                {trend.startsWith('+') ? <FiArrowUp className="inline mr-1" /> : <FiArrowDown className="inline mr-1" />}
-                {trend}
-              </span>
-            )}
-            <span className="text-slate-500 ml-2 uppercase tracking-tighter">vs baseline</span>
-          </div>
-        </div>
-        <div className={`w-12 h-12 rounded-2xl bg-${color}-500/10 flex items-center justify-center text-${color}-500`}>
-          <Icon size={24} />
+  const users = useMemo(() => (!q ? data.users : data.users.filter((u) => [u.username, u.email, u.first_name, u.last_name, u.role, u.is_active ? 'active' : 'blocked'].filter(Boolean).join(' ').toLowerCase().includes(q))), [data.users, q])
+  const models = useMemo(() => (!q ? data.models : data.models.filter((m) => [m.name, m.dataset_name, m.is_active ? 'active' : 'archived'].filter(Boolean).join(' ').toLowerCase().includes(q))), [data.models, q])
+  const predictions = useMemo(() => (!q ? data.predictions : data.predictions.filter((p) => [p.stock_symbol, p.username, p.recommendation, p.user_role].filter(Boolean).join(' ').toLowerCase().includes(q))), [data.predictions, q])
+  const logs = useMemo(() => (!q ? data.logs : data.logs.filter((l) => [l.username, l.user, l.action, l.role].filter(Boolean).join(' ').toLowerCase().includes(q))), [data.logs, q])
+  const datasets = useMemo(() => (!q ? data.datasets : data.datasets.filter((d) => [d.name, d.row_count, d.column_count].filter((v) => v != null).join(' ').toLowerCase().includes(q))), [data.datasets, q])
+  const previewRows = useMemo(() => (!stockPreview?.data ? [] : !q ? stockPreview.data : stockPreview.data.filter((r) => [r.date, r.close, r.volume].filter((v) => v != null).join(' ').toLowerCase().includes(q))), [stockPreview, q])
+
+  const trendData = useMemo(() => {
+    if (Array.isArray(data.stats?.prediction_trend) && data.stats.prediction_trend.length) return data.stats.prediction_trend.map((p) => ({ label: p.date, count: p.count }))
+    const buckets = {}
+    const today = new Date()
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      buckets[d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })] = 0
+    }
+    data.predictions.forEach((p) => {
+      const d = p.created_at ? new Date(p.created_at) : null
+      if (!d || Number.isNaN(d.getTime())) return
+      const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      if (label in buckets) buckets[label] += 1
+    })
+    return Object.entries(buckets).map(([label, count]) => ({ label, count }))
+  }, [data.predictions, data.stats])
+
+  const topOperatives = useMemo(() => {
+    if (Array.isArray(data.stats?.top_operators) && data.stats.top_operators.length) return data.stats.top_operators
+    const counts = {}
+    data.predictions.forEach((p) => {
+      const key = p.username || 'Unknown'
+      counts[key] = counts[key] || { username: key, role: p.user_role || 'investor', count: 0 }
+      counts[key].count += 1
+    })
+    return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 5)
+  }, [data.predictions, data.stats])
+
+  const searchResults = useMemo(() => {
+    if (!q) return []
+    const results = []
+    users.slice(0, 3).forEach((u) => results.push({ id: `u-${u.id}`, type: 'User', title: u.username, subtitle: `${roleLabel(u.role)} | ${u.email || 'No email'}`, click: () => { setActiveTab('users'); setSelectedUser(u) } }))
+    models.slice(0, 2).forEach((m) => results.push({ id: `m-${m.id}`, type: 'Model', title: m.name, subtitle: `R2 ${fmtScore(m.r_squared)} | ${m.is_active ? 'Active' : 'Archived'}`, click: () => setActiveTab('modelforge') }))
+    predictions.slice(0, 2).forEach((p) => results.push({ id: `p-${p.id}`, type: 'Prediction', title: p.stock_symbol, subtitle: `${p.username || 'Unknown'} | ${p.recommendation}`, click: () => setActiveTab('inference') }))
+    logs.slice(0, 2).forEach((l, i) => results.push({ id: `l-${l.id || i}`, type: 'Activity', title: l.username || l.user || 'System', subtitle: l.action, click: () => setActiveTab('compliance') }))
+    datasets.slice(0, 2).forEach((d) => results.push({ id: `d-${d.id}`, type: 'Dataset', title: d.name, subtitle: `${fmtInt(d.row_count)} rows | ${fmtInt(d.column_count)} cols`, click: () => setActiveTab('datalake') }))
+    if (profile && [profile.username, profile.email, profile.role].filter(Boolean).join(' ').toLowerCase().includes(q)) results.unshift({ id: 'profile', type: 'Profile', title: profile.username, subtitle: `${roleLabel(profile.role)} | current admin`, click: () => setSelectedUser(profile) })
+    return results.slice(0, 8)
+  }, [datasets, logs, models, predictions, profile, q, users])
+
+  const activeModel = data.models.find((m) => m.is_active) || null
+  const latestModel = data.models[0] || null
+  const focusModel = activeModel || latestModel
+  const hasTrainMetrics = (m) => hasMetric(m?.train_r_squared) && hasMetric(m?.overfit_gap)
+  const healthBadge = (m) => {
+    if (!m) return ['Unavailable', 'bg-slate-800 text-slate-400']
+    if (!hasTrainMetrics(m)) return ['Legacy Metrics', 'bg-amber-500/10 text-amber-400']
+    if (Number(m.overfit_gap) > 0.12) return ['Overfit Risk', 'bg-red-500/10 text-red-400']
+    if (Number(m.r_squared) < 0.5) return ['Needs Retrain', 'bg-amber-500/10 text-amber-400']
+    return ['Stable', 'bg-emerald-500/10 text-emerald-400']
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#070b14]">
+        <div className="relative">
+          <div className="h-24 w-24 animate-spin rounded-full border-4 border-slate-800 border-t-blue-500"></div>
+          <div className="absolute inset-0 flex items-center justify-center text-xs font-black text-blue-500">TIQ</div>
         </div>
       </div>
-    </div>
-  );
-
-  if (loading) return (
-    <div className="flex h-screen items-center justify-center bg-[#070b14] overflow-hidden">
-      <div className="relative">
-        <div className="w-24 h-24 rounded-full border-4 border-slate-800 border-t-blue-500 animate-spin"></div>
-        <div className="absolute inset-0 flex items-center justify-center font-black text-blue-500 text-xs">TIQ</div>
-      </div>
-    </div>
-  );
+    )
+  }
 
   return (
-    <div className="flex h-screen bg-[#070b14] text-slate-300 overflow-hidden font-inter selection:bg-blue-500/30">
-      {/* Sidebar Navigation */}
-      <aside className={`${isSidebarCollapsed ? 'w-24' : 'w-72'} bg-[#0c1220] border-r border-slate-800/50 flex flex-col transition-all duration-500 ease-elastic z-50`}>
-        <div className="p-8 flex items-center justify-between">
-          {!isSidebarCollapsed && (
-            <div className="flex items-center space-x-3 group cursor-pointer" onClick={() => setActiveTab('overview')}>
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)] group-hover:rotate-12 transition-transform">
-                <FiTrendingUp className="text-white text-xl" />
-              </div>
-              <div>
-                <span className="text-xl font-black text-white tracking-[-0.05em]">INTEL<span className="text-blue-500 underline decoration-blue-500/30 underline-offset-4">CORE</span></span>
-                <p className="text-[10px] text-blue-500/60 font-black tracking-widest uppercase">Admin v2.5</p>
-              </div>
-            </div>
+    <div className="flex h-screen overflow-hidden bg-[#070b14] text-slate-300 selection:bg-blue-500/30">
+      <aside className={`${collapsed ? 'w-24' : 'w-72'} z-50 flex flex-col border-r border-slate-800/50 bg-[#0c1220] transition-all duration-500`}>
+        <div className="flex items-center justify-between p-8">
+          {!collapsed && (
+            <button className="group flex items-center gap-3 text-left" onClick={() => setActiveTab('overview')}>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)] transition-transform group-hover:rotate-12"><FiTrendingUp className="text-xl text-white" /></div>
+              <div><span className="text-xl font-black tracking-[-0.05em] text-white">INTEL<span className="text-blue-500 underline decoration-blue-500/30 underline-offset-4">CORE</span></span><p className="text-[10px] font-black uppercase tracking-widest text-blue-500/60">Admin v2.6</p></div>
+            </button>
           )}
-          <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-2 hover:bg-slate-800/50 rounded-lg text-slate-500 transition-colors">
-            {isSidebarCollapsed ? <FiMenu size={24} /> : <FiX size={24} />}
-          </button>
+          <button onClick={() => setCollapsed((v) => !v)} className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-800/50">{collapsed ? <FiMenu size={22} /> : <FiX size={22} />}</button>
         </div>
-
-        <nav className="flex-1 px-4 mt-6 space-y-2 overflow-y-auto no-scrollbar">
-          {[
-            { id: 'overview', label: 'Dashboard', icon: FiPieChart },
-            { id: 'users', label: 'User Management', icon: FiUsers },
-            { id: 'datalake', label: 'Stock Data', icon: FiDatabase },
-            { id: 'modelforge', label: 'ML Control', icon: FiCpu },
-            { id: 'inference', label: 'Prediction Logs', icon: FiLayers },
-            { id: 'compliance', label: 'Activity Logs', icon: FiShield },
-            { id: 'config', label: 'Settings', icon: FiSettings },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center p-4 rounded-2xl transition-all duration-300 group ${
-                activeTab === item.id 
-                  ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-[0_4px_20px_rgba(59,130,246,0.1)]' 
-                  : 'text-slate-500 hover:bg-slate-800/30 hover:text-slate-100'
-              }`}
-            >
-              <item.icon className={`text-xl ${isSidebarCollapsed ? 'mx-auto' : 'mr-4'} ${activeTab === item.id ? 'animate-pulse' : ''}`} />
-              {!isSidebarCollapsed && <span className="font-bold tracking-tight">{item.label}</span>}
-              {activeTab === item.id && !isSidebarCollapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,1)]"></div>}
+        <nav className="mt-6 flex-1 space-y-2 overflow-y-auto px-4 no-scrollbar">
+          {NAV.map(([id, label, Icon]) => (
+            <button key={id} onClick={() => setActiveTab(id)} className={`group flex w-full items-center rounded-2xl p-4 transition-all duration-300 ${activeTab === id ? 'border border-blue-500/20 bg-blue-600/10 text-blue-400 shadow-[0_4px_20px_rgba(59,130,246,0.1)]' : 'text-slate-500 hover:bg-slate-800/30 hover:text-slate-100'}`}>
+              <Icon className={`text-xl ${collapsed ? 'mx-auto' : 'mr-4'} ${activeTab === id ? 'animate-pulse' : ''}`} />
+              {!collapsed && <span className="font-bold tracking-tight">{label}</span>}
+              {activeTab === id && !collapsed && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,1)]"></div>}
             </button>
           ))}
         </nav>
-
-        <div className="p-6 border-t border-slate-800/50 space-y-4">
-          <button 
-            onClick={() => window.location.href = '/dashboard'}
-            className="w-full flex items-center p-4 text-blue-400/70 hover:bg-blue-500/10 hover:text-blue-400 rounded-2xl transition-all font-bold border border-transparent hover:border-blue-500/20"
-          >
-            <FiGlobe className={`${isSidebarCollapsed ? 'mx-auto' : 'mr-4'} text-xl`} />
-            {!isSidebarCollapsed && <span>Return to Site</span>}
-          </button>
-          
-          <button 
-            onClick={() => authHelpers.logout()}
-            className="w-full flex items-center p-4 text-red-400/70 hover:bg-red-500/10 hover:text-red-400 rounded-2xl transition-all font-bold"
-          >
-            <FiLogOut className={`${isSidebarCollapsed ? 'mx-auto' : 'mr-4'} text-xl`} />
-            {!isSidebarCollapsed && <span>Terminate Session</span>}
-          </button>
+        <div className="space-y-4 border-t border-slate-800/50 p-6">
+          <button onClick={() => { window.location.href = '/dashboard' }} className="flex w-full items-center rounded-2xl border border-transparent p-4 font-bold text-blue-400/70 transition-all hover:border-blue-500/20 hover:bg-blue-500/10 hover:text-blue-400"><FiGlobe className={`${collapsed ? 'mx-auto' : 'mr-4'} text-xl`} />{!collapsed && <span>Return to Site</span>}</button>
+          <button onClick={() => authHelpers.logout()} className="flex w-full items-center rounded-2xl p-4 font-bold text-red-400/70 transition-all hover:bg-red-500/10 hover:text-red-400"><FiLogOut className={`${collapsed ? 'mx-auto' : 'mr-4'} text-xl`} />{!collapsed && <span>Terminate Session</span>}</button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-10 relative custom-scrollbar">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-6 bg-[#0c1220]/50 p-6 rounded-[2rem] border border-slate-800/30 backdrop-blur-xl sticky top-0 z-40">
-          <div>
-            <h1 className="text-4xl font-black text-white tracking-tight uppercase">
-              {activeTab === 'overview' ? 'Sovereign Operations' : activeTab.replace(/([A-Z])/g, ' $1').trim()}
-            </h1>
-            <div className="flex items-center mt-2 space-x-3 text-xs font-bold text-slate-500">
-              <span className="flex items-center"><FiGlobe className="mr-1 text-green-500" /> System: Global Stable</span>
-              <span className="w-1 h-1 rounded-full bg-slate-700"></span>
-              <span className="flex items-center"><FiClock className="mr-1" /> Uptime: 99.98%</span>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-6">
-            <div className="relative">
-              <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input 
-                type="text" 
-                placeholder="Secure resource lookup..."
-                className="pl-12 pr-6 py-3.5 bg-slate-900/80 border border-slate-700/50 rounded-2xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 w-80 text-sm font-medium transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            
-            <div className="hidden lg:flex items-center p-2 pr-6 bg-slate-900/80 border border-slate-700/50 rounded-full">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-purple-800 flex items-center justify-center font-black text-white shadow-lg ring-2 ring-blue-500/20 mr-4">
-                {authHelpers.getUsername()?.[0].toUpperCase()}
+      <main className="relative flex-1 overflow-y-auto p-10 custom-scrollbar">
+        <header className="sticky top-0 z-40 mb-10 rounded-[2rem] border border-slate-800/30 bg-[#0c1220]/70 p-6 backdrop-blur-xl">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-4xl font-black uppercase tracking-tight text-white">{title}</h1>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500">
+                <span className="flex items-center"><FiGlobe className="mr-1 text-green-500" />API: {data.stats?.system?.api_status || 'unknown'}</span>
+                <span className="h-1 w-1 rounded-full bg-slate-700"></span>
+                <span className="flex items-center"><FiClock className="mr-1" />Last sync: {fmtDate(data.stats?.system?.timestamp)}</span>
               </div>
-              <div className="text-left">
-                <p className="text-xs font-black text-white leading-none uppercase">{authHelpers.getUsername()}</p>
-                <p className="text-[10px] text-blue-500/80 font-black tracking-widest mt-1">SUPER ADMIN</p>
+            </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="relative">
+                <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input type="text" placeholder="Search users, models, predictions, logs..." className="w-full rounded-2xl border border-slate-700/50 bg-slate-900/80 py-3.5 pl-12 pr-6 text-sm font-medium text-white transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/40 sm:w-96" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                {q && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+12px)] rounded-[1.5rem] border border-slate-800 bg-[#0c1220] p-3 shadow-2xl shadow-black/40">
+                    {searchResults.length ? searchResults.map((r) => (
+                      <button key={r.id} onClick={r.click} className="mb-2 flex w-full items-start justify-between rounded-2xl bg-slate-900/60 px-4 py-3 text-left transition-all hover:bg-blue-500/5 last:mb-0">
+                        <div><p className="text-sm font-bold text-white">{r.title}</p><p className="mt-1 text-xs text-slate-400">{r.subtitle}</p></div>
+                        <span className="rounded-full bg-slate-800 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-300">{r.type}</span>
+                      </button>
+                    )) : <div className="rounded-2xl border border-dashed border-slate-700/80 px-4 py-6 text-center"><p className="text-sm font-bold text-white">No matching admin records</p><p className="mt-1 text-xs text-slate-400">Try username, symbol, model name, or log action.</p></div>}
+                  </div>
+                )}
               </div>
+              <button onClick={() => setSelectedUser(profile)} className="hidden items-center rounded-full border border-slate-700/50 bg-slate-900/80 p-2 pr-6 text-left transition-all hover:border-blue-500/30 hover:bg-blue-500/5 lg:flex">
+                <div className="mr-4 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-blue-600 to-purple-800 text-sm font-black text-white shadow-lg ring-2 ring-blue-500/20">{(profile?.username || authHelpers.getUsername() || 'A').charAt(0).toUpperCase()}</div>
+                <div><p className="text-xs font-black uppercase leading-none text-white">{profile?.username || authHelpers.getUsername() || 'Admin'}</p><p className="mt-1 text-[10px] font-black uppercase tracking-widest text-blue-500/80">{roleLabel(profile?.role || authHelpers.getUserRole())}</p></div>
+              </button>
             </div>
           </div>
         </header>
 
-        {/* Dynamic Alerts */}
         {feedback.msg && (
-          <div className={`mb-10 p-6 rounded-[1.5rem] border animate-slideIn ${
-            feedback.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-500' : 'bg-green-500/10 border-green-500/20 text-green-500'
-          } flex items-center justify-between`}>
-            <div className="flex items-center">
-              {feedback.type === 'error' ? <FiAlertCircle size={24} className="mr-4" /> : <FiCheckCircle size={24} className="mr-4" />}
-              <span className="font-bold tracking-tight">{feedback.msg}</span>
-            </div>
-            <button onClick={() => setFeedback({ type: null, msg: '' })} className="hover:opacity-50">Dismiss</button>
+          <div className={`mb-8 flex items-center justify-between rounded-[1.5rem] border p-5 ${feedback.type === 'error' ? 'border-red-500/20 bg-red-500/10 text-red-400' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'}`}>
+            <div className="flex items-center">{feedback.type === 'error' ? <FiAlertCircle size={22} className="mr-3" /> : <FiCheckCircle size={22} className="mr-3" />}<span className="font-bold">{feedback.msg}</span></div>
+            <button onClick={() => setFeedback({ type: '', msg: '' })} className="text-sm font-semibold hover:opacity-70">Dismiss</button>
           </div>
         )}
 
-        {/* PROPER CONDITIONAL RENDERING */}
-        
-        {/* VIEW: OVERVIEW / DASHBOARD */}
+        <div className="mb-8"><h2 className="text-3xl font-black tracking-tight text-white">{heading}</h2><p className="mt-2 text-sm text-slate-400">{activeTab === 'overview' ? 'Operational pulse across accounts, predictions, and model activity.' : activeTab === 'modelforge' ? 'Retrain the active forecasting model and review deployment quality.' : activeTab === 'datalake' ? 'Search live market snapshots and review uploaded datasets.' : activeTab === 'users' ? 'Control access, inspect profiles, and respond to account issues.' : activeTab === 'inference' ? 'Track generated predictions with symbols, users, and recommendations.' : 'Review authenticated actions performed across the platform.'}</p></div>
+
         {activeTab === 'overview' && (
           <div className="space-y-10 animate-fadeInLow">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <MetricCard label="Compute Load" value={allData.systemHealth.cpu} trend="+1.2%" icon={FiCpu} color="blue" />
-              <MetricCard label="Active Clients" value={allData.stats?.users?.active || 0} trend="+14% w/w" icon={FiUsers} color="purple" />
-              <MetricCard label="Signal Throughput" value={allData.stats?.predictions?.total || 0} trend="+8% d/d" icon={FiTarget} color="green" />
-              <MetricCard label="API Latency" value={allData.systemHealth.latency} trend="-4ms" icon={FiGlobe} color="amber" />
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+              <Metric label="Recent Activity" value={fmtInt(data.stats?.system?.recent_activity_count || 0)} note="Authenticated actions recorded in the last 24 hours." Icon={FiActivity} tone="blue" />
+              <Metric label="Active Clients" value={fmtInt(data.stats?.users?.active || 0)} note="Enabled user accounts that can currently access the system." Icon={FiUsers} tone="purple" />
+              <Metric label="Signal Throughput" value={fmtInt(data.stats?.predictions?.total || 0)} note="Total prediction entries stored across the platform." Icon={FiTarget} tone="emerald" />
+              <Metric label="API Latency" value={latencyMs != null ? `${latencyMs}ms` : '--'} note="Round-trip admin dashboard fetch time from this browser session." Icon={FiGlobe} tone="amber" />
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 glass-card p-8">
-                <div className="flex justify-between items-center mb-8">
-                  <div>
-                    <h3 className="text-2xl font-black text-white tracking-tight">Intelligence Velocity</h3>
-                    <p className="text-sm text-slate-500 font-bold">Aggregate inference patterns for last 7 cycles</p>
+            <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
+              <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 p-8 xl:col-span-2">
+                <div className="mb-8"><h3 className="text-2xl font-black tracking-tight text-white">Intelligence Velocity</h3><p className="text-sm font-medium text-slate-500">Predictions logged over the latest 7-day window.</p></div>
+                {trendData.some((p) => p.count > 0) ? (
+                  <div className="h-[350px] w-full">
+                    <ResponsiveContainer>
+                      <AreaChart data={trendData}>
+                        <defs><linearGradient id="velocityGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.45} /><stop offset="95%" stopColor="#3b82f6" stopOpacity={0} /></linearGradient></defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                        <XAxis dataKey="label" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dy={15} />
+                        <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dx={-10} allowDecimals={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#0c1220', borderRadius: '16px', border: '1px solid #334155' }} />
+                        <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} fill="url(#velocityGrad)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </div>
-                </div>
-                <div className="h-[350px] w-full text-blue-500">
-                  <ResponsiveContainer>
-                    <AreaChart data={allData.stats?.prediction_trend || []}>
-                      <defs>
-                        <linearGradient id="velocityGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                      <XAxis dataKey="date" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} dy={15} />
-                      <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} dx={-15} />
-                      <Tooltip contentStyle={{ backgroundColor: '#0c1220', borderRadius: '16px', border: '1px solid #334155' }} />
-                      <Area type="monotone" dataKey="count" fill="url(#velocityGrad)" stroke="#3b82f6" strokeWidth={4} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
+                ) : <EmptyState title="No prediction activity yet" text="As soon as users start generating predictions, this chart will show the last 7 days of volume." />}
               </div>
-
-              <div className="glass-card p-8 bg-slate-900/50">
-                <h3 className="text-xl font-black text-white mb-8 border-b border-slate-800/50 pb-4">Top Operatives</h3>
-                <div className="space-y-6">
-                  {userActivityData.map((user, i) => (
-                    <div key={i} className="flex items-center space-x-4 p-4 rounded-2xl bg-slate-800/20 border border-slate-700/30">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${i === 0 ? 'bg-yellow-500/10 text-yellow-500' : 'bg-slate-800 text-slate-500'}`}>
-                        {i + 1}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-white font-black tracking-tight">{user.name}</p>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{user.count} Inferences</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 p-8">
+                <h3 className="border-b border-slate-800/70 pb-4 text-xl font-black text-white">Top Operatives</h3>
+                {topOperatives.length ? <div className="mt-6 space-y-4">{topOperatives.map((u, i) => <button key={`${u.username}-${i}`} onClick={() => setSelectedUser(data.users.find((x) => x.username === u.username) || { username: u.username, role: u.role, is_active: true })} className="flex w-full items-center gap-4 rounded-2xl border border-slate-700/40 bg-slate-800/20 p-4 text-left transition-all hover:border-blue-500/20 hover:bg-blue-500/5"><div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black ${i === 0 ? 'bg-yellow-500/10 text-yellow-400' : 'bg-slate-800 text-slate-400'}`}>{i + 1}</div><div className="flex-1"><p className="font-black tracking-tight text-white">{u.username}</p><p className="mt-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">{roleLabel(u.role)} | {fmtInt(u.count)} predictions</p></div></button>)}</div> : <div className="mt-6"><EmptyState title="Top operatives will appear here" text="Once prediction history builds up, the most active users will be ranked automatically." /></div>}
               </div>
             </div>
           </div>
         )}
 
-        {/* VIEW: USER MANAGEMENT */}
         {activeTab === 'users' && (
-          <div className="space-y-8 animate-fadeInLow">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-black text-white tracking-tight">User Management</h2>
-                <p className="text-slate-500 text-sm mt-1">Control access for {allData.users.length} registered accounts</p>
-              </div>
-            </div>
-
-            <div className="glass-card overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-[#0c1220]/80">
-                  <tr className="text-[10px] font-black text-slate-500 uppercase tracking-[3px] border-b border-slate-800">
-                    <th className="p-8">Username / ID</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Last Seen</th>
-                    <th className="text-right pr-8">Control</th>
+          <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 overflow-hidden animate-fadeInLow">
+            <table className="w-full text-left">
+              <thead className="bg-[#0c1220]/90"><tr className="border-b border-slate-800 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500"><th className="p-8">Username / ID</th><th>Role</th><th>Status</th><th className="pr-8 text-right">Control</th></tr></thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {users.length ? users.map((u) => (
+                  <tr key={u.id} className="transition-colors hover:bg-slate-800/20">
+                    <td className="p-8"><button onClick={() => setSelectedUser(u)} className="flex items-center gap-5 text-left"><div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-800 font-black text-white">{u.username[0].toUpperCase()}</div><div><p className="font-black text-white">{u.username}</p><p className="text-xs text-slate-500">{u.email || 'N/A'}</p></div></button></td>
+                    <td><span className={`rounded-xl px-3 py-1 text-[10px] font-black uppercase tracking-widest ${u.role === 'admin' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>{roleLabel(u.role)}</span></td>
+                    <td><div className="flex items-center gap-2"><div className={`h-2 w-2 rounded-full ${u.is_active ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`}></div><span className={`text-xs font-bold ${u.is_active ? 'text-emerald-400' : 'text-red-400'}`}>{u.is_active ? 'Active' : 'Blocked'}</span></div></td>
+                    <td className="pr-8 text-right"><div className="flex justify-end gap-3"><button disabled={processing} onClick={() => runAction(() => adminAPI.updateUser(u.id, { is_active: !u.is_active }), `User ${u.username} is now ${!u.is_active ? 'Active' : 'Blocked'}`)} className={`rounded-xl p-3 transition-all disabled:cursor-not-allowed disabled:opacity-50 ${u.is_active ? 'bg-red-500/10 text-red-400 hover:bg-red-600 hover:text-white' : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-600 hover:text-white'}`}>{u.is_active ? <FiLock size={18} /> : <FiUnlock size={18} />}</button><button disabled={processing} onClick={() => { if (window.confirm(`Delete user "${u.username}" permanently? This action cannot be undone.`)) runAction(() => adminAPI.deleteUser(u.id), `User ${u.username} deleted permanently`) }} className="rounded-xl bg-red-500/10 p-3 text-red-400 transition-all hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"><FiTrash2 size={18} /></button></div></td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/50">
-                  {allData.users.filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase())).map((user) => (
-                    <tr key={user.id} className="hover:bg-slate-800/20 transition-colors group">
-                      <td className="p-8">
-                        <div className="flex items-center space-x-5">
-                          <div className={`w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center font-black text-white border border-slate-700`}>
-                            {user.username[0].toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="text-white font-black">{user.username}</p>
-                            <p className="text-xs text-slate-500">{user.email || 'N/A'}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${user.role === 'admin' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
-                          {user.role}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-2 h-2 rounded-full ${user.is_active ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,1)]' : 'bg-red-500'}`}></div>
-                          <span className={`text-xs font-bold ${user.is_active ? 'text-green-500' : 'text-red-500'}`}>
-                            {user.is_active ? 'Active' : 'Blocked'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="text-sm text-slate-500">{user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}</td>
-                      <td className="text-right pr-8">
-                        <button 
-                          disabled={processing}
-                          onClick={() => handleAction(
-                            () => adminAPI.updateUser(user.id, { is_active: !user.is_active }),
-                            `User ${user.username} is now ${!user.is_active ? 'Active' : 'Blocked'}`
-                          )}
-                          className={`p-3 rounded-xl transition-all ${user.is_active ? 'bg-red-500/10 text-red-500 hover:bg-red-600' : 'bg-green-500/10 text-green-500 hover:bg-green-600'} hover:text-white`}
-                        >
-                           {user.is_active ? <FiLock size={18} /> : <FiUnlock size={18} />}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                )) : <tr><td colSpan={4} className="p-8"><EmptyState title="No user matches found" text="Try searching by username, email, role, or account status." /></td></tr>}
+              </tbody>
+            </table>
           </div>
         )}
 
-        {/* VIEW: DATA LAKE / STOCK DATA */}
         {activeTab === 'datalake' && (
-          <div className="space-y-10 animate-fadeInLow">
-            <div className="flex justify-between items-center">
-              <h2 className="text-3xl font-black text-white">Stock Data Records</h2>
+          <div className="space-y-8 animate-fadeInLow">
+            <div className="grid grid-cols-1 gap-8 xl:grid-cols-4">
+              <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 p-6 xl:col-span-1">
+                <h3 className="text-sm font-black uppercase tracking-[0.2em] text-white">Fetch Live Data</h3>
+                <p className="mt-2 text-sm text-slate-500">Search any supported ticker and preview recent market candles.</p>
+                <div className="mt-6 space-y-4">
+                  <input type="text" placeholder="Ticker e.g. AAPL" className="w-full rounded-xl border border-slate-700 bg-slate-900 p-4 font-bold text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40" value={stockSearch} onChange={(e) => setStockSearch(e.target.value.toUpperCase())} />
+                  <button disabled={!stockSearch || processing} onClick={async () => { try { setProcessing(true); const d = await adminAPI.fetchStockData(stockSearch); setStockPreview(d); showFeedback('success', `Live market data synced for ${d.symbol}`) } catch (err) { showFeedback('error', err.response?.data?.error || 'Stock data fetch failed') } finally { setProcessing(false) } }} className="w-full rounded-xl bg-blue-600 py-4 text-xs font-black uppercase tracking-widest text-white transition-all disabled:cursor-not-allowed disabled:opacity-50">Sync Stock Data</button>
+                </div>
+              </div>
+              <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 overflow-hidden xl:col-span-3">
+                <div className="border-b border-slate-800 bg-slate-900/50 p-6"><h3 className="text-xl font-black text-white">Data Preview: {stockPreview?.symbol || 'No symbol selected'}</h3></div>
+                <div className="max-h-[480px] overflow-y-auto no-scrollbar">
+                  {previewRows.length ? (
+                    <table className="w-full text-left text-sm">
+                      <thead className="sticky top-0 bg-slate-900"><tr className="border-b border-slate-800 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500"><th className="p-4">Date</th><th>Close</th><th>Volume</th></tr></thead>
+                      <tbody>{previewRows.map((r, i) => <tr key={`${r.date}-${i}`} className="border-b border-slate-800/20"><td className="p-4 font-mono text-slate-400">{r.date}</td><td className="font-bold text-blue-400">${fmtNum(r.close)}</td><td className="text-slate-400">{fmtInt(r.volume)}</td></tr>)}</tbody>
+                    </table>
+                  ) : <div className="p-8"><EmptyState title="No stock preview available" text="Use the ticker search on the left. Search text also filters preview rows if data is already loaded." /></div>}
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-              <div className="lg:col-span-1 glass-card p-6 h-fit">
-                <h4 className="text-white font-black text-xs uppercase mb-6">Fetch Live Data</h4>
-                <div className="space-y-4">
-                  <input 
-                    type="text" 
-                    placeholder="Ticker e.g. AAPL"
-                    className="w-full bg-slate-800 border-none rounded-xl p-4 text-white font-bold"
-                    value={stockSearch}
-                    onChange={(e) => setStockSearch(e.target.value.toUpperCase())}
-                  />
-                  <button 
-                    onClick={async () => {
-                      try {
-                        setProcessing(true);
-                        const data = await adminAPI.fetchStockData(stockSearch);
-                        setStockPreview(data);
-                        showFeedback('success', 'Relay success: Data fetched.');
-                      } catch (e) {
-                         showFeedback('error', 'Fetch failed.');
-                      } finally { setProcessing(false); }
-                    }}
-                    className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-xs"
-                  >
-                    Sync Stock Data
-                  </button>
-                </div>
-              </div>
-              <div className="lg:col-span-3 glass-card overflow-hidden">
-                <div className="p-6 bg-slate-900/50 border-b border-slate-800">
-                   <h3 className="text-white font-black">Data Preview: {stockPreview?.symbol || 'None'}</h3>
-                </div>
-                <div className="max-h-[500px] overflow-y-auto no-scrollbar">
-                   <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-900 sticky top-0">
-                         <tr className="text-slate-500 font-black uppercase border-b border-slate-800">
-                            <th className="p-4">Date</th>
-                            <th>Close</th>
-                            <th>Volume</th>
-                         </tr>
-                      </thead>
-                      <tbody>
-                        {stockPreview?.data?.map((row, i) => (
-                           <tr key={i} className="border-b border-slate-800/10">
-                              <td className="p-4 font-mono text-slate-400">{row.date}</td>
-                              <td className="font-bold text-blue-400">${row.close.toFixed(2)}</td>
-                              <td className="text-slate-500">{row.volume.toLocaleString()}</td>
-                           </tr>
-                        ))}
-                      </tbody>
-                   </table>
-                </div>
-              </div>
+            <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 overflow-hidden">
+              <div className="border-b border-slate-800 p-6"><h3 className="text-xl font-black text-white">Dataset Registry</h3><p className="mt-1 text-sm text-slate-500">Uploaded training datasets available to the backend.</p></div>
+              {datasets.length ? (
+                <table className="w-full text-left">
+                  <thead className="bg-slate-900"><tr className="border-b border-slate-800 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500"><th className="p-6">Dataset</th><th>Rows</th><th>Columns</th><th className="pr-6 text-right">Uploaded</th></tr></thead>
+                  <tbody className="divide-y divide-slate-800/40">{datasets.map((d) => <tr key={d.id} className="hover:bg-slate-800/20"><td className="p-6 font-bold text-white">{d.name}</td><td className="text-slate-300">{fmtInt(d.row_count)}</td><td className="text-slate-300">{fmtInt(d.column_count)}</td><td className="pr-6 text-right text-slate-500">{fmtDate(d.uploaded_at)}</td></tr>)}</tbody>
+                </table>
+              ) : <div className="p-8"><EmptyState title="No dataset matches found" text="When datasets are uploaded, they will appear here and can also be searched from the header." /></div>}
             </div>
           </div>
         )}
 
-        {/* VIEW: ML CONTROL / MODEL FORGE */}
         {activeTab === 'modelforge' && (
-          <div className="space-y-10 animate-fadeInLow">
-            <h2 className="text-3xl font-black text-white">Model Forge</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="glass-card p-10 space-y-8">
-                <div className="flex items-center space-x-4">
-                  <FiCpu className="text-indigo-500" size={32} />
-                  <h3 className="text-xl font-black text-white">Retrain Active Model</h3>
-                </div>
-                <p className="text-slate-500 text-sm italic">This will update the core weights of the LSTM architecture using the latest staged datasets.</p>
-                <button 
-                  onClick={() => handleAction(() => adminAPI.retrainModel({ model_name: 'LSTM_V4' }), 'Training started.')}
-                  className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black uppercase shadow-lg shadow-indigo-900/20"
-                >
-                  Confirm Neural Training
-                </button>
+          <div className="space-y-8 animate-fadeInLow">
+            <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
+              <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 p-10">
+                <div className="flex items-center gap-4"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400"><FiCpu size={26} /></div><div><h3 className="text-2xl font-black text-white">Retrain Active Model</h3><p className="mt-1 text-sm text-slate-500">Chronological split + regularized random forest training pipeline.</p></div></div>
+                <p className="mt-8 text-sm italic leading-7 text-slate-400">Retraining now updates the active model bundle, stores train and test metrics, and flags overfit risk using the train-test score gap instead of fake accuracy.</p>
+                {focusModel && (
+                  <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{activeModel ? 'Current Active Model' : 'Latest Recorded Model'}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-black uppercase tracking-widest text-blue-400">{focusModel.name}</span>
+                      <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-black uppercase tracking-widest text-slate-400">Test R2 {fmtScore(focusModel.r_squared)}</span>
+                      <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-black uppercase tracking-widest text-slate-400">RMSE {fmtNum(focusModel.rmse)}</span>
+                      <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-widest ${healthBadge(focusModel)[1]}`}>{healthBadge(focusModel)[0]}</span>
+                    </div>
+                    {!activeModel && <p className="mt-4 text-xs text-amber-300">No model was flagged active in history, so the latest deployment has been surfaced instead.</p>}
+                    {!hasTrainMetrics(focusModel) && <p className="mt-2 text-xs text-slate-400">This is a legacy deployment entry, so train-side metrics were not captured yet. Run retrain once on the updated backend to fill them.</p>}
+                  </div>
+                )}
+                <button onClick={retrainModel} disabled={processing} className="mt-8 w-full rounded-xl bg-indigo-600 py-4 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-indigo-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-50">Retrain And Activate Model</button>
               </div>
-              <div className="glass-card p-10">
-                 <h3 className="text-xl font-black text-white mb-6">Deployment History</h3>
-                 <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
-                    {allData.models.map((m, i) => (
-                       <div key={i} className={`p-4 rounded-2xl border ${m.is_active ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-800 bg-[#0c1220]'}`}>
-                          <div className="flex justify-between">
-                             <span className="font-black text-white">{m.name}</span>
-                             <span className="text-green-500 font-black">{(m.r_squared * 100).toFixed(1)}% Acc</span>
+              <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 p-10">
+                <h3 className="mb-6 text-xl font-black text-white">Deployment History</h3>
+                <div className="max-h-[480px] space-y-4 overflow-y-auto pr-2">
+                  {models.length ? models.map((m) => {
+                    const [health, badge] = healthBadge(m)
+                    const legacyMetrics = !hasTrainMetrics(m)
+                    return (
+                      <div key={m.id} className={`rounded-2xl border p-5 ${m.is_active ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-800 bg-slate-950/40'}`}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-white">{m.name}</p>
+                            <p className="mt-1 text-xs text-slate-500">{m.dataset_name || 'Default dataset'} | {fmtDate(m.training_date)}</p>
                           </div>
-                       </div>
-                    ))}
-                 </div>
+                          <div className="flex flex-wrap gap-2">
+                            {m.is_active && <span className="rounded-full bg-blue-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-400">Active</span>}
+                            <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${badge}`}>{health}</span>
+                          </div>
+                        </div>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Test R2</p><p className="mt-2 text-lg font-black text-white">{fmtScore(m.r_squared)}</p></div>
+                          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">RMSE</p><p className="mt-2 text-lg font-black text-white">{fmtNum(m.rmse)}</p></div>
+                          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Train R2</p><p className="mt-2 text-lg font-black text-white">{legacyMetrics ? 'Legacy run' : fmtScore(m.train_r_squared)}</p></div>
+                          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3"><p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Gap</p><p className="mt-2 text-lg font-black text-white">{legacyMetrics ? 'Legacy run' : fmtScore(m.overfit_gap)}</p></div>
+                        </div>
+                        {legacyMetrics && <p className="mt-4 text-xs text-slate-400">Captured before train-gap tracking was enabled. Retrain on the current backend to store full deployment quality metrics.</p>}
+                      </div>
+                    )
+                  }) : <EmptyState title="No deployment history" text="Model versions will appear here after retraining or when historical records are available." />}
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* VIEW: PREDICTION LOGS */}
         {activeTab === 'inference' && (
-          <div className="space-y-10 animate-fadeInLow">
-             <h2 className="text-3xl font-black text-white">Prediction Audit Logs</h2>
-             <div className="glass-card overflow-hidden">
-                <table className="w-full text-left">
-                   <thead className="bg-slate-900">
-                      <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-800">
-                         <th className="p-8">Assigned Vector</th>
-                         <th>Inferred Price</th>
-                         <th>Recommendation</th>
-                         <th className="text-right pr-8">Cycle Time</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-800/40">
-                      {allData.predictions.map((p, i) => (
-                        <tr key={i} className="hover:bg-slate-800/10">
-                           <td className="p-8 text-white font-bold">{p.stock_symbol}</td>
-                           <td className="text-blue-400 font-bold">${parseFloat(p.predicted_price).toFixed(2)}</td>
-                           <td>
-                              <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${p.recommendation === 'BUY' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                                 {p.recommendation}
-                              </span>
-                           </td>
-                           <td className="text-right pr-8 text-slate-500">{new Date(p.created_at).toLocaleTimeString()}</td>
-                        </tr>
-                      ))}
-                   </tbody>
-                </table>
-             </div>
+          <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 overflow-hidden animate-fadeInLow">
+            {predictions.length ? (
+              <table className="w-full text-left">
+                <thead className="bg-slate-900"><tr className="border-b border-slate-800 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500"><th className="p-8">Symbol</th><th>User</th><th>Prediction</th><th>Recommendation</th><th className="pr-8 text-right">Created</th></tr></thead>
+                <tbody className="divide-y divide-slate-800/40">{predictions.map((p) => <tr key={p.id} className="hover:bg-slate-800/10"><td className="p-8 font-bold text-white">{p.stock_symbol}</td><td className="text-slate-300">{p.username || 'Unknown'}</td><td className="font-bold text-blue-400">${fmtNum(p.predicted_price)}</td><td><span className={`rounded-lg px-2 py-1 text-[10px] font-black uppercase ${p.recommendation === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : p.recommendation === 'SELL' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'}`}>{p.recommendation}</span></td><td className="pr-8 text-right text-slate-500">{fmtDate(p.created_at)}</td></tr>)}</tbody>
+              </table>
+            ) : <div className="p-8"><EmptyState title="No prediction logs found" text="Try a different search term, or wait for new predictions to be created." /></div>}
           </div>
         )}
 
-        {/* VIEW: ACTIVITY LOGS */}
         {activeTab === 'compliance' && (
-          <div className="space-y-10 animate-fadeInLow">
-             <h2 className="text-3xl font-black text-white">System Compliance Logs</h2>
-             <div className="glass-card overflow-hidden">
-                <table className="w-full text-left">
-                   <thead className="bg-slate-900">
-                      <tr className="text-[10px] font-black text-slate-500 uppercase border-b border-slate-800">
-                         <th className="p-8">Timestamp</th>
-                         <th>User</th>
-                         <th>Action Protocol</th>
-                         <th className="text-right pr-8">Handshake Method</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-800/40">
-                      {allData.logs.map((l, i) => (
-                        <tr key={i} className="hover:bg-slate-800/10">
-                           <td className="p-8 text-slate-500 font-mono text-xs">{new Date(l.timestamp).toLocaleString()}</td>
-                           <td className="text-white font-bold">{l.user || l.username}</td>
-                           <td className="text-slate-300">{l.action}</td>
-                           <td className="text-right pr-8"><span className="text-[10px] font-black px-2 py-1 bg-blue-600/10 text-blue-400 rounded">REST_v1.2</span></td>
-                        </tr>
-                      ))}
-                   </tbody>
-                </table>
-             </div>
+          <div className="rounded-[2rem] border border-slate-800/70 bg-[#0c1220]/70 overflow-hidden animate-fadeInLow">
+            {logs.length ? (
+              <table className="w-full text-left">
+                <thead className="bg-slate-900"><tr className="border-b border-slate-800 text-[10px] font-black uppercase tracking-[0.22em] text-slate-500"><th className="p-8">Timestamp</th><th>User</th><th>Action</th><th className="pr-8 text-right">Role</th></tr></thead>
+                <tbody className="divide-y divide-slate-800/40">{logs.map((l, i) => <tr key={l.id || `${l.timestamp}-${i}`} className="hover:bg-slate-800/10"><td className="p-8 font-mono text-xs text-slate-500">{fmtDate(l.timestamp)}</td><td className="font-bold text-white">{l.user || l.username}</td><td className="text-slate-300">{l.action}</td><td className="pr-8 text-right"><span className="rounded-lg bg-blue-600/10 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-blue-400">{roleLabel(l.role)}</span></td></tr>)}</tbody>
+              </table>
+            ) : <div className="p-8"><EmptyState title="No activity logs found" text="Search by username or action, or wait for new logged events to appear." /></div>}
           </div>
         )}
-
-        {/* VIEW: SETTINGS */}
-        {activeTab === 'config' && (
-          <div className="space-y-10 animate-fadeInLow max-w-4xl">
-             <h2 className="text-3xl font-black text-white">System Core Config</h2>
-             <div className="glass-card p-10 space-y-6">
-                <div>
-                   <label className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2 block">Alpha Signal Threshold</label>
-                   <input type="range" className="w-full" defaultValue={85} />
-                </div>
-                <div className="p-6 bg-red-500/5 rounded-2xl border border-red-500/10">
-                   <h4 className="text-red-500 font-black mb-2">Danger Operations</h4>
-                   <button className="px-6 py-3 bg-red-600 text-white rounded-xl font-black uppercase text-xs">Purge All Inference Records</button>
-                </div>
-             </div>
-          </div>
-        )}
-
       </main>
-    </div>
-  );
-};
 
-export default TradeIQAdmin;
+      <ProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+    </div>
+  )
+}
+
+export default TradeIQAdmin
+

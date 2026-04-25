@@ -1,28 +1,52 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authAPI, authHelpers } from '../services/api'
+
+const INITIAL_FORM_STATE = {
+  username: '',
+  email: '',
+  password: '',
+  password_confirm: '',
+  role: 'investor',
+}
 
 /**
  * Register Page
  * User registration form
  */
 const Register = () => {
-  const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    password: '',
-    password_confirm: '',
-    role: 'investor'
-  })
+  const [formData, setFormData] = useState(INITIAL_FORM_STATE)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [inputsUnlocked, setInputsUnlocked] = useState(false)
+  const usernameRef = useRef(null)
+  const emailRef = useRef(null)
+  const passwordRef = useRef(null)
+  const confirmPasswordRef = useRef(null)
   const navigate = useNavigate()
 
+  useEffect(() => {
+    const clearForm = () => {
+      setFormData({ ...INITIAL_FORM_STATE })
+      setInputsUnlocked(false)
+      ;[usernameRef, emailRef, passwordRef, confirmPasswordRef].forEach((ref) => {
+        if (ref.current) {
+          ref.current.value = ''
+        }
+      })
+    }
+
+    clearForm()
+    const timers = [0, 150, 600].map((delay) => window.setTimeout(clearForm, delay))
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [])
+
   const handleChange = (e) => {
+    const field = e.target.dataset.field
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [field]: e.target.value
     })
   }
 
@@ -121,7 +145,15 @@ const Register = () => {
 
         {/* Register Form */}
         <div className="card card-hover">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} autoComplete="off" className="space-y-6" data-form-type="other">
+            <div
+              className="absolute left-[-9999px] top-auto h-0 w-0 overflow-hidden opacity-0 pointer-events-none"
+              aria-hidden="true"
+            >
+              <input type="text" name="username" autoComplete="username" tabIndex={-1} />
+              <input type="password" name="password" autoComplete="current-password" tabIndex={-1} />
+            </div>
+
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
                 <p className="text-red-400 text-sm">{error}</p>
@@ -140,12 +172,21 @@ const Register = () => {
               </label>
               <input
                 type="text"
-                name="username"
+                ref={usernameRef}
+                name="tradeiq_register_username"
+                data-field="username"
                 value={formData.username}
                 onChange={handleChange}
+                onFocus={() => setInputsUnlocked(true)}
                 required
+                readOnly={!inputsUnlocked}
                 className="input-field w-full"
                 placeholder="Choose a username"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
               />
             </div>
 
@@ -154,13 +195,22 @@ const Register = () => {
                 Email
               </label>
               <input
+                ref={emailRef}
                 type="email"
-                name="email"
+                name="tradeiq_register_email"
+                data-field="email"
                 value={formData.email}
                 onChange={handleChange}
+                onFocus={() => setInputsUnlocked(true)}
                 required
+                readOnly={!inputsUnlocked}
                 className="input-field w-full"
                 placeholder="Enter your email"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
               />
             </div>
 
@@ -169,14 +219,23 @@ const Register = () => {
                 Password
               </label>
               <input
+                ref={passwordRef}
                 type="password"
-                name="password"
+                name="tradeiq_register_password"
+                data-field="password"
                 value={formData.password}
                 onChange={handleChange}
+                onFocus={() => setInputsUnlocked(true)}
                 required
                 minLength="8"
+                readOnly={!inputsUnlocked}
                 className="input-field w-full"
                 placeholder="Create a password (min 8 characters)"
+                autoComplete="new-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
               />
             </div>
             <div>
@@ -184,14 +243,23 @@ const Register = () => {
                 Confirm Password
               </label>
               <input
+                ref={confirmPasswordRef}
                 type="password"
-                name="password_confirm"
+                name="tradeiq_register_password_confirm"
+                data-field="password_confirm"
                 value={formData.password_confirm}
                 onChange={handleChange}
+                onFocus={() => setInputsUnlocked(true)}
                 required
                 minLength="8"
+                readOnly={!inputsUnlocked}
                 className="input-field w-full"
                 placeholder="Re-enter your password"
+                autoComplete="new-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
               />
             </div>
 
@@ -200,9 +268,11 @@ const Register = () => {
                 Role
               </label>
               <select
-                name="role"
+                name="tradeiq_register_role"
+                data-field="role"
                 value={formData.role}
                 onChange={handleChange}
+                onFocus={() => setInputsUnlocked(true)}
                 className="input-field w-full"
               >
                 {roleOptions.map((option) => (

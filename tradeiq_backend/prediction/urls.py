@@ -13,6 +13,7 @@ from .views import (
     PredictionAPIView,
     StockHistoryAPIView,
     StockAPIView,
+    ResearchPanelAPIView,
 
     # Admin
     UserManagementAPIView,
@@ -44,6 +45,7 @@ urlpatterns = [
     path('predict/', PredictionAPIView.as_view(), name='predict'),
     path('stock-history/', StockHistoryAPIView.as_view(), name='stock_history'),
     path('stock/', StockAPIView.as_view(), name='stock'),
+    path('research/', ResearchPanelAPIView.as_view(), name='research'),
 
     # Admin
     path('admin/users/', UserManagementAPIView.as_view(), name='user_management'),

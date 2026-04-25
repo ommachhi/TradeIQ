@@ -1,24 +1,47 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authAPI, authHelpers } from '../services/api'
+
+const INITIAL_FORM_STATE = {
+  identifier: '',
+  password: '',
+}
 
 /**
  * Login Page
  * User authentication form
  */
 const Login = () => {
-  const [formData, setFormData] = useState({
-    username: '',
-    password: ''
-  })
+  const [formData, setFormData] = useState(INITIAL_FORM_STATE)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [inputsUnlocked, setInputsUnlocked] = useState(false)
+  const identifierRef = useRef(null)
+  const passwordRef = useRef(null)
   const navigate = useNavigate()
 
+  useEffect(() => {
+    const clearForm = () => {
+      setFormData({ ...INITIAL_FORM_STATE })
+      setInputsUnlocked(false)
+      if (identifierRef.current) {
+        identifierRef.current.value = ''
+      }
+      if (passwordRef.current) {
+        passwordRef.current.value = ''
+      }
+    }
+
+    clearForm()
+    const timers = [0, 150, 600].map((delay) => window.setTimeout(clearForm, delay))
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [])
+
   const handleChange = (e) => {
+    const field = e.target.dataset.field
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [field]: e.target.value
     })
   }
 
@@ -28,7 +51,10 @@ const Login = () => {
     setError('')
 
     try {
-      const response = await authAPI.login(formData)
+      const response = await authAPI.login({
+        username: formData.identifier,
+        password: formData.password,
+      })
 
       // new backend returns { access_token, user }
       authHelpers.setAuthData(
@@ -50,6 +76,10 @@ const Login = () => {
     } catch (err) {
       const detail = err.response?.data?.detail || err.response?.data?.error
       setError(detail || 'Login failed. Please check your credentials.')
+      setFormData((current) => ({ ...current, password: '' }))
+      if (passwordRef.current) {
+        passwordRef.current.value = ''
+      }
     } finally {
       setLoading(false)
     }
@@ -74,7 +104,15 @@ const Login = () => {
 
         {/* Login Form */}
         <div className="card card-hover">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} autoComplete="off" className="space-y-6" data-form-type="other">
+            <div
+              className="absolute left-[-9999px] top-auto h-0 w-0 overflow-hidden opacity-0 pointer-events-none"
+              aria-hidden="true"
+            >
+              <input type="text" name="username" autoComplete="username" tabIndex={-1} />
+              <input type="password" name="password" autoComplete="current-password" tabIndex={-1} />
+            </div>
+
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
                 <p className="text-red-400 text-sm">{error}</p>
@@ -87,12 +125,21 @@ const Login = () => {
               </label>
               <input
                 type="text"
-                name="username"
-                value={formData.username}
+                ref={identifierRef}
+                name="tradeiq_login_identifier"
+                data-field="identifier"
+                value={formData.identifier}
                 onChange={handleChange}
+                onFocus={() => setInputsUnlocked(true)}
                 required
+                readOnly={!inputsUnlocked}
                 className="input-field w-full"
                 placeholder="Enter your username or email"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
               />
             </div>
 
@@ -102,12 +149,21 @@ const Login = () => {
               </label>
               <input
                 type="password"
-                name="password"
+                ref={passwordRef}
+                name="tradeiq_login_secret"
+                data-field="password"
                 value={formData.password}
                 onChange={handleChange}
+                onFocus={() => setInputsUnlocked(true)}
                 required
+                readOnly={!inputsUnlocked}
                 className="input-field w-full"
                 placeholder="Enter your password"
+                autoComplete="new-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                data-lpignore="true"
               />
             </div>
 

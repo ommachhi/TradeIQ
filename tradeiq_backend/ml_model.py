@@ -9,6 +9,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.preprocessing import MinMaxScaler
 
+
 def create_lstm_model(input_shape):
     model = Sequential()
     model.add(LSTM(50, return_sequences=True, input_shape=input_shape))

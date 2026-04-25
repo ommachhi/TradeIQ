@@ -10,9 +10,46 @@ from .models import Dataset, ModelHistory, PredictionHistory, ActivityLog, UserP
 from .symbols import resolve_symbol_with_history, is_valid_stock_symbol_format
 
 User = get_user_model()
+ROLE_CHOICES = [
+    ('admin', 'Admin'),
+    ('investor', 'Investor'),
+    ('analyst', 'Market Analyst'),
+    ('researcher', 'Researcher'),
+]
 
 
-class UserSerializer(serializers.ModelSerializer):
+class UniqueUserIdentityMixin:
+    """Shared validation for unique username/email rules."""
+
+    def _exclude_current_instance(self, queryset):
+        instance = getattr(self, 'instance', None)
+        if instance is None:
+            return queryset
+        return queryset.exclude(pk=instance.pk)
+
+    def validate_username(self, value):
+        cleaned = str(value or '').strip()
+        if not cleaned:
+            raise serializers.ValidationError("Username is required")
+
+        queryset = self._exclude_current_instance(User.objects.filter(username__iexact=cleaned))
+        if queryset.exists():
+            raise serializers.ValidationError("Username already exists")
+        return cleaned
+
+    def validate_email(self, value):
+        cleaned = str(value or '').strip().lower()
+        if not cleaned:
+            raise serializers.ValidationError("Email is required")
+
+        queryset = User.objects.exclude(email='').filter(email__iexact=cleaned)
+        queryset = self._exclude_current_instance(queryset)
+        if queryset.exists():
+            raise serializers.ValidationError("Email already exists")
+        return cleaned
+
+
+class UserSerializer(UniqueUserIdentityMixin, serializers.ModelSerializer):
     """Serializer for User model"""
 
     role = serializers.CharField(source='userprofile.role', read_only=True)
@@ -23,17 +60,12 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'date_joined']
 
 
-class UserRegistrationSerializer(serializers.ModelSerializer):
+class UserRegistrationSerializer(UniqueUserIdentityMixin, serializers.ModelSerializer):
     """Serializer for user registration"""
 
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
-    role = serializers.ChoiceField(choices=[
-        ('admin', 'Admin'),
-        ('investor', 'Investor'),
-        ('analyst', 'Market Analyst'),
-        ('researcher', 'Researcher'),
-    ], default='investor')
+    role = serializers.ChoiceField(choices=ROLE_CHOICES, default='investor')
 
     class Meta:
         model = User
@@ -51,8 +83,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         role = validated_data.pop('role')
-        validated_data.pop('password_confirm')
-        user = User.objects.create_user(**validated_data)
+        password = validated_data.pop('password')
+        validated_data.pop('password_confirm', None)
+        validated_data['email'] = str(validated_data.get('email') or '').strip().lower()
+        user = User.objects.create_user(password=password, **validated_data)
 
         # The post_save signal creates the profile automatically.
         profile, _ = UserProfile.objects.get_or_create(user=user)
@@ -227,7 +261,23 @@ class ModelHistorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ModelHistory
-        fields = ['id', 'name', 'model_file', 'rmse', 'r_squared', 'training_date', 'dataset_used', 'dataset_name', 'is_active']
+        fields = [
+            'id',
+            'name',
+            'model_file',
+            'rmse',
+            'r_squared',
+            'train_rmse',
+            'train_r_squared',
+            'overfit_gap',
+            'feature_count',
+            'training_samples',
+            'testing_samples',
+            'training_date',
+            'dataset_used',
+            'dataset_name',
+            'is_active',
+        ]
         read_only_fields = ['id', 'training_date']
 
 
@@ -280,6 +330,27 @@ class StockDataSerializer(serializers.Serializer):
         return value
 
 
+class ResearchQuerySerializer(serializers.Serializer):
+    """Serializer to validate research panel query parameters"""
+
+    symbol = serializers.CharField(max_length=20)
+    range = serializers.CharField(default='1m', max_length=2)
+
+    def validate_symbol(self, value):
+        cleaned = (value or '').strip().upper()
+        if not is_valid_stock_symbol_format(cleaned):
+            raise serializers.ValidationError(
+                "Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS"
+            )
+        return cleaned
+
+    def validate_range(self, value):
+        valid_ranges = ['1d', '1w', '1m', '1y']
+        if value not in valid_ranges:
+            raise serializers.ValidationError(f"Invalid range. Must be one of: {', '.join(valid_ranges)}")
+        return value
+
+
 class ActivityLogSerializer(serializers.ModelSerializer):
     """Serializer for ActivityLog model"""
 
@@ -291,15 +362,30 @@ class ActivityLogSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'timestamp']
 
 
-class UserManagementSerializer(serializers.ModelSerializer):
+class UserManagementSerializer(UniqueUserIdentityMixin, serializers.ModelSerializer):
     """Serializer for admin user management"""
 
-    role = serializers.CharField(source='userprofile.role')
+    role = serializers.ChoiceField(source='userprofile.role', choices=ROLE_CHOICES, required=False)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active', 'date_joined', 'last_login']
-        read_only_fields = ['id', 'date_joined', 'last_login']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active', 'date_joined']
+        read_only_fields = ['id', 'date_joined']
+
+    def update(self, instance, validated_data):
+        profile_data = validated_data.pop('userprofile', {})
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        role = profile_data.get('role')
+        if role:
+            profile, _ = UserProfile.objects.get_or_create(user=instance)
+            profile.role = role
+            profile.save(update_fields=['role'])
+
+        return instance
 
 
 class RetrainModelSerializer(serializers.Serializer):

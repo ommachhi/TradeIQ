@@ -14,7 +14,8 @@ from django.contrib.auth import authenticate, get_user_model
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.http import HttpResponse
-from django.db.models import Count, Avg
+from django.db.models import Count, Avg, Q
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from pathlib import Path
 import pandas as pd
@@ -43,9 +44,11 @@ from .serializers import (
     ActivityLogSerializer,
     UserManagementSerializer,
     RetrainModelSerializer,
+    ResearchQuerySerializer,
     PDFReportSerializer
 )
 from .models import Dataset, ModelHistory, PredictionHistory, ActivityLog, UserProfile, Portfolio
+from .research import build_research_panel
 # Import ml_model only when needed to avoid startup issues
 # from .ml_model import StockPricePredictor, stock_predictor
 
@@ -67,6 +70,38 @@ def _get_user_role(user, default='investor'):
         return default
 
 
+def _get_client_ip(request):
+    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+def _log_activity(user, action, request=None, role=None):
+    try:
+        ActivityLog.objects.create(
+            user=user,
+            action=action,
+            role=role or _get_user_role(user),
+            ip_address=_get_client_ip(request) if request else None,
+            user_agent=(request.META.get('HTTP_USER_AGENT', '')[:1000] if request else '')
+        )
+    except Exception:
+        pass
+
+
+def _ensure_active_model_history():
+    active_model = ModelHistory.objects.filter(is_active=True).order_by('-training_date').first()
+    if active_model:
+        return active_model
+
+    latest_model = ModelHistory.objects.order_by('-training_date').first()
+    if latest_model:
+        latest_model.is_active = True
+        latest_model.save(update_fields=['is_active'])
+    return latest_model
+
+
 # Authentication Views
 class RegisterView(APIView):
     """User registration endpoint"""
@@ -79,20 +114,7 @@ class RegisterView(APIView):
             user = serializer.save()
             refresh = RefreshToken.for_user(user)
 
-            # Log activity
-            try:
-                profile = user.userprofile
-                ActivityLog.objects.create(
-                    user=user,
-                    action="User registered",
-                    role=profile.role
-                )
-            except UserProfile.DoesNotExist:
-                ActivityLog.objects.create(
-                    user=user,
-                    action="User registered",
-                    role='investor'
-                )
+            _log_activity(user, "User registered", request=request)
 
             return Response({
                 'user': UserSerializer(user).data,
@@ -111,41 +133,55 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
+        identifier = (request.data.get('username') or request.data.get('email') or '').strip()
+        password = request.data.get('password') or ''
 
-        user = authenticate(username=username, password=password)
+        if not identifier or not password:
+            return Response(
+                {'error': 'Username/email and password are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        if user:
-            refresh = RefreshToken.for_user(user)
+        matching_users = User.objects.filter(
+            Q(username__iexact=identifier) | Q(email__iexact=identifier)
+        ).order_by('date_joined', 'id')
 
-            # Log activity
-            try:
-                profile = user.userprofile
-                ActivityLog.objects.create(
-                    user=user,
-                    action="User logged in",
-                    role=profile.role
-                )
-            except UserProfile.DoesNotExist:
-                ActivityLog.objects.create(
-                    user=user,
-                    action="User logged in",
-                    role='investor'
-                )
+        if not matching_users.exists():
+            return Response(
+                {'error': 'User account not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-            return Response({
-                'user': UserSerializer(user).data,
-                'tokens': {
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
-                }
-            })
+        if matching_users.count() > 1:
+            return Response(
+                {'error': 'Duplicate account detected for this login identifier. Please contact admin.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        return Response(
-            {'error': 'Invalid credentials'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
+        target_user = matching_users.first()
+        if not target_user.is_active:
+            return Response(
+                {'error': 'This account has been blocked by admin'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        user = authenticate(username=target_user.username, password=password)
+        if not user:
+            return Response(
+                {'error': 'Invalid credentials'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        refresh = RefreshToken.for_user(user)
+        _log_activity(user, "User logged in", request=request)
+
+        return Response({
+            'user': UserSerializer(user).data,
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+        })
 
 
 class ProfileView(APIView):
@@ -360,6 +396,41 @@ class StockAPIView(APIView):
             return api_error('Failed to fetch stock data.', http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class ResearchPanelAPIView(APIView):
+    """Return a unified research payload for a symbol."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = ResearchQuerySerializer(data=request.query_params)
+        if not serializer.is_valid():
+            details = serializer.errors
+            message = 'Invalid stock symbol. Please enter a valid symbol like AAPL, RELIANCE.NS, TCS.NS'
+            if isinstance(details, dict):
+                symbol_error = details.get('symbol')
+                range_error = details.get('range')
+                if symbol_error and isinstance(symbol_error, list) and symbol_error[0]:
+                    message = str(symbol_error[0])
+                elif range_error and isinstance(range_error, list) and range_error[0]:
+                    message = str(range_error[0])
+            return api_error(message, http_status=status.HTTP_400_BAD_REQUEST, data={'details': details})
+
+        symbol = serializer.validated_data['symbol']
+        range_key = serializer.validated_data['range']
+
+        try:
+            payload = build_research_panel(symbol, range_key)
+            return api_success(payload)
+        except LookupError:
+            return api_error('Unable to load research data for this symbol.', http_status=status.HTTP_404_NOT_FOUND)
+        except TimeoutError:
+            return api_error('Research request timed out. Please try again.', http_status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except ValueError as exc:
+            return api_error(str(exc), http_status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return api_error('Failed to build research panel.', http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # Admin Views
 class PortfolioAPIView(APIView):
     """Manage user portfolio"""
@@ -399,7 +470,7 @@ class UserManagementAPIView(APIView):
         except UserProfile.DoesNotExist:
             return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
 
-        users = User.objects.all()
+        users = User.objects.select_related('userprofile').all().order_by('date_joined', 'id')
         serializer = UserManagementSerializer(users, many=True)
         return Response(serializer.data)
 
@@ -413,26 +484,19 @@ class UserManagementAPIView(APIView):
 
         try:
             user = User.objects.get(pk=pk)
+            if user.pk == request.user.pk and request.data.get('is_active') is False:
+                return Response(
+                    {'error': 'You cannot block your own admin account'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             serializer = UserManagementSerializer(user, data=request.data, partial=True)
 
             if serializer.is_valid():
                 serializer.save()
-
-                # Update role in profile if provided
-                if 'role' in request.data:
-                    try:
-                        user_profile = user.userprofile
-                        user_profile.role = request.data['role']
-                        user_profile.save()
-                    except UserProfile.DoesNotExist:
-                        UserProfile.objects.create(user=user, role=request.data['role'])
-
-                # Log activity
-                ActivityLog.objects.create(
-                    user=request.user,
-                    action=f"Updated user {user.username}",
-                    role=request.user.userprofile.role
-                )
+                action = f"Updated user {user.username}"
+                if 'is_active' in request.data:
+                    action = f"{'Unblocked' if user.is_active else 'Blocked'} user {user.username}"
+                _log_activity(request.user, action, request=request)
 
                 return Response(serializer.data)
 
@@ -440,6 +504,33 @@ class UserManagementAPIView(APIView):
 
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, pk=None):
+        try:
+            profile = request.user.userprofile
+            if profile.role != 'admin':
+                return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+        if pk is None:
+            return Response({'error': 'User id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.pk == request.user.pk:
+            return Response(
+                {'error': 'You cannot delete your own admin account'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        username = user.username
+        user.delete()
+        _log_activity(request.user, f"Deleted user {username}", request=request)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class DatasetManagementAPIView(APIView):
@@ -527,6 +618,7 @@ class ModelRetrainingAPIView(APIView):
 
         dataset_id = serializer.validated_data.get('dataset_id')
         model_name = serializer.validated_data.get('model_name')
+        dataset = None
 
         try:
             from .ml_model import StockPricePredictor
@@ -545,28 +637,47 @@ class ModelRetrainingAPIView(APIView):
             # Train model
             training_result = StockPricePredictor.train_model(dataset_path, model_name)
 
+            ModelHistory.objects.filter(is_active=True).update(is_active=False)
+
             # Save model history
             model_history = ModelHistory.objects.create(
                 name=training_result['model_name'],
                 model_file=training_result['model_path'],
                 rmse=training_result['test_rmse'],
                 r_squared=training_result['test_r2'],
-                dataset_used=dataset if dataset_id else None
+                train_rmse=training_result['train_rmse'],
+                train_r_squared=training_result['train_r2'],
+                overfit_gap=training_result['overfit_gap'],
+                feature_count=training_result['feature_count'],
+                training_samples=training_result['training_samples'],
+                testing_samples=training_result['testing_samples'],
+                dataset_used=dataset if dataset_id else None,
+                is_active=True,
             )
 
+            try:
+                from ai import predictor
+
+                predictor._model = None
+                predictor._scaler = None
+                predictor._target_scaler = None
+            except Exception:
+                pass
+
             # Log activity
-            ActivityLog.objects.create(
-                user=request.user,
-                action=f"Retrained model {model_name}",
-                role=_get_user_role(request.user)
-            )
+            _log_activity(request.user, f"Retrained model {model_name}", request=request)
 
             return Response({
                 'message': 'Model retrained successfully',
                 'model': ModelHistorySerializer(model_history).data,
                 'metrics': {
+                    'train_rmse': training_result['train_rmse'],
                     'rmse': training_result['test_rmse'],
-                    'r_squared': training_result['test_r2']
+                    'train_r_squared': training_result['train_r2'],
+                    'r_squared': training_result['test_r2'],
+                    'overfit_gap': training_result['overfit_gap'],
+                    'training_samples': training_result['training_samples'],
+                    'testing_samples': training_result['testing_samples'],
                 }
             })
 
@@ -590,7 +701,8 @@ class ModelHistoryAPIView(APIView):
         except UserProfile.DoesNotExist:
             return Response({'error': 'Insufficient permissions'}, status=status.HTTP_403_FORBIDDEN)
 
-        models = ModelHistory.objects.all().order_by('-training_date')
+        _ensure_active_model_history()
+        models = ModelHistory.objects.all().order_by('-is_active', '-training_date')
         serializer = ModelHistorySerializer(models, many=True)
         return Response(serializer.data)
 
@@ -770,6 +882,46 @@ class AdminDashboardAPIView(APIView):
 
         # Prediction stats
         total_predictions = PredictionHistory.objects.count()
+        today = timezone.localdate()
+        start_day = today - timedelta(days=6)
+        prediction_counts = (
+            PredictionHistory.objects.filter(created_at__date__gte=start_day)
+            .annotate(day=TruncDate('created_at'))
+            .values('day')
+            .annotate(count=Count('id'))
+            .order_by('day')
+        )
+        prediction_count_lookup = {
+            item['day'].date() if hasattr(item['day'], 'date') else item['day']: item['count']
+            for item in prediction_counts
+        }
+        prediction_trend = []
+        for offset in range(7):
+            day = start_day + timedelta(days=offset)
+            prediction_trend.append({
+                'date': day.strftime('%d %b'),
+                'iso_date': day.isoformat(),
+                'count': prediction_count_lookup.get(day, 0),
+            })
+
+        top_operator_rows = (
+            PredictionHistory.objects.values('user__username', 'user__userprofile__role')
+            .annotate(count=Count('id'))
+            .order_by('-count', 'user__username')[:5]
+        )
+        top_operators = [
+            {
+                'username': row['user__username'] or 'Unknown',
+                'role': row['user__userprofile__role'] or 'investor',
+                'count': row['count'],
+            }
+            for row in top_operator_rows
+        ]
+
+        recent_activity_count = ActivityLog.objects.filter(
+            timestamp__gte=timezone.now() - timedelta(days=1)
+        ).count()
+        active_model = _ensure_active_model_history()
         
         # Recent activity logs (last 10)
         recent_logs = ActivityLog.objects.select_related('user').order_by('-timestamp')[:10]
@@ -795,8 +947,12 @@ class AdminDashboardAPIView(APIView):
             },
             'system': {
                 'api_status': 'online',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'recent_activity_count': recent_activity_count,
+                'active_model': active_model.name if active_model else None,
             },
+            'prediction_trend': prediction_trend,
+            'top_operators': top_operators,
             'recent_activity': recent_activity
         })
 

@@ -10,16 +10,33 @@ const Home = () => {
   const [apiStatus, setApiStatus] = useState('checking')
 
   useEffect(() => {
+    let cancelled = false
+
     const checkAPI = async () => {
       try {
         const result = await healthCheck()
-        setApiStatus(result.status === 'healthy' ? 'healthy' : 'unhealthy')
+        if (!cancelled) {
+          setApiStatus(result.status === 'healthy' ? 'healthy' : 'unhealthy')
+        }
       } catch (error) {
-        setApiStatus('error')
+        if (!cancelled) {
+          setApiStatus('error')
+        }
       }
     }
 
     checkAPI()
+
+    const intervalId = window.setInterval(checkAPI, 10000)
+    window.addEventListener('focus', checkAPI)
+    window.addEventListener('online', checkAPI)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', checkAPI)
+      window.removeEventListener('online', checkAPI)
+    }
   }, [])
 
   return (

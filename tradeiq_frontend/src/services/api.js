@@ -7,6 +7,7 @@ const API_BASE_URL =
     : 'http://localhost:8000/api')
 const AUTH_STATE_EVENT = 'tradeiq-auth-changed'
 const REQUEST_TIMEOUT_MS = 5000
+const PUBLIC_API_PATHS = new Set(['/health/', '/auth/login/', '/auth/register/'])
 
 const INDIAN_SYMBOL_MAP = {
   INFOSYS: 'INFY.NS',
@@ -131,6 +132,20 @@ const mapApiErrorMessage = (error, fallbackMessage = 'Request failed') => {
   return fallbackMessage
 }
 
+const shouldSkipAuth = (config = {}) => {
+  if (config?.skipAuth) {
+    return true
+  }
+
+  const url = typeof config?.url === 'string' ? config.url : ''
+  if (!url) {
+    return false
+  }
+
+  const normalizedUrl = url.startsWith('/') ? url : `/${url}`
+  return PUBLIC_API_PATHS.has(normalizedUrl)
+}
+
 const normalizePredictionResponse = (payload) => {
   const recommendation = payload?.recommendation || 'HOLD'
   const trend = payload?.trend || 'Sideways'
@@ -159,6 +174,80 @@ const normalizePredictionResponse = (payload) => {
   }
 }
 
+const normalizeResearchResponse = (payload) => {
+  const chartPoints = Array.isArray(payload?.chart?.points)
+    ? payload.chart.points.map((point) => ({
+        ...point,
+        open: Number(point?.open ?? 0),
+        high: Number(point?.high ?? 0),
+        low: Number(point?.low ?? 0),
+        close: Number(point?.close ?? 0),
+        volume: Number(point?.volume ?? 0),
+      }))
+    : []
+
+  return {
+    ...payload,
+    overview: {
+      ...payload?.overview,
+      current_price: Number(payload?.overview?.current_price ?? 0),
+      price_change: Number(payload?.overview?.price_change ?? 0),
+      price_change_pct: Number(payload?.overview?.price_change_pct ?? 0),
+      market_cap:
+        payload?.overview?.market_cap == null ? null : Number(payload.overview.market_cap),
+      volume: Number(payload?.overview?.volume ?? 0),
+      fifty_two_week_high: Number(payload?.overview?.fifty_two_week_high ?? 0),
+      fifty_two_week_low: Number(payload?.overview?.fifty_two_week_low ?? 0),
+    },
+    chart: {
+      ...payload?.chart,
+      points: chartPoints,
+    },
+    technical_analysis: {
+      ...payload?.technical_analysis,
+      rsi: Number(payload?.technical_analysis?.rsi ?? 0),
+      support: Number(payload?.technical_analysis?.support ?? 0),
+      resistance: Number(payload?.technical_analysis?.resistance ?? 0),
+      volatility_pct: Number(payload?.technical_analysis?.volatility_pct ?? 0),
+    },
+    ai_prediction: {
+      ...payload?.ai_prediction,
+      direction: payload?.ai_prediction?.direction || 'Sideways',
+      confidence_label: payload?.ai_prediction?.confidence_label || 'Low',
+      risk_level: payload?.ai_prediction?.risk_level || 'Medium',
+      recommendation: payload?.ai_prediction?.recommendation || 'HOLD',
+      warning: payload?.ai_prediction?.warning || '',
+      predicted_price: Number(payload?.ai_prediction?.predicted_price ?? 0),
+      confidence_pct: Number(payload?.ai_prediction?.confidence_pct ?? 0),
+      risk_score: Number(payload?.ai_prediction?.risk_score ?? 0),
+      change_percent: Number(payload?.ai_prediction?.change_percent ?? 0),
+    },
+    news_sentiment: {
+      ...payload?.news_sentiment,
+      items: Array.isArray(payload?.news_sentiment?.items)
+        ? payload.news_sentiment.items.map((item) => ({
+            ...item,
+            sentiment: item?.sentiment || 'Neutral',
+            sentiment_score: Number(item?.sentiment_score ?? 0),
+          }))
+        : [],
+      summary: {
+        overall: payload?.news_sentiment?.summary?.overall || 'Neutral',
+        positive: Number(payload?.news_sentiment?.summary?.positive ?? 0),
+        negative: Number(payload?.news_sentiment?.summary?.negative ?? 0),
+        neutral: Number(payload?.news_sentiment?.summary?.neutral ?? 0),
+        summary: payload?.news_sentiment?.summary?.summary || '',
+      },
+    },
+    recommendation: {
+      ...payload?.recommendation,
+      action: payload?.recommendation?.action || 'HOLD',
+      score: Number(payload?.recommendation?.score ?? 0),
+      reason: payload?.recommendation?.reason || '',
+    },
+  }
+}
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: REQUEST_TIMEOUT_MS,
@@ -171,7 +260,7 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('accessToken')
-    if (token) {
+    if (token && !shouldSkipAuth(config)) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -185,7 +274,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !shouldSkipAuth(error.config)) {
       authHelpers.clearAuthData()
       window.location.href = '/login'
     }
@@ -198,12 +287,12 @@ api.interceptors.response.use(
  */
 export const authAPI = {
   register: async (userData) => {
-    const response = await api.post('/auth/register/', userData)
+    const response = await api.post('/auth/register/', userData, { skipAuth: true })
     return normalizeAuthResponse(response.data)
   },
 
   login: async (credentials) => {
-    const response = await api.post('/auth/login/', credentials)
+    const response = await api.post('/auth/login/', credentials, { skipAuth: true })
     return normalizeAuthResponse(response.data)
   },
 
@@ -240,9 +329,8 @@ export const authHelpers = {
   },
 
   clearAuthData: () => {
-    localStorage.removeItem('accessToken')
-    localStorage.removeItem('userRole')
-    localStorage.removeItem('username')
+    localStorage.clear()
+    sessionStorage.clear()
     emitAuthStateChange()
   },
 
@@ -258,7 +346,7 @@ export const authHelpers = {
 
   logout: () => {
     authHelpers.clearAuthData()
-    window.location.href = '/login'
+    window.location.replace('/login')
   }
 }
 
@@ -318,6 +406,23 @@ export const predictionAPI = {
   }
 }
 
+export const researchAPI = {
+  getPanel: async (symbol, range = '1m') => {
+    const normalizedSymbol = normalizeStockSymbol(symbol)
+    try {
+      const response = await api.get('/research/', {
+        params: { symbol: normalizedSymbol, range },
+      })
+      const payload = unwrapApiEnvelope(response.data)
+      return normalizeResearchResponse(payload)
+    } catch (error) {
+      const mapped = new Error(mapApiErrorMessage(error, 'Failed to load research panel'))
+      mapped.response = error?.response
+      throw mapped
+    }
+  },
+}
+
 
 /**
  * Admin APIs
@@ -331,6 +436,10 @@ export const adminAPI = {
   updateUser: async (userId, data) => {
     const response = await api.patch(`/admin/users/${userId}/`, data)
     return response.data
+  },
+
+  deleteUser: async (userId) => {
+    await api.delete(`/admin/users/${userId}/`)
   },
 
   getDatasets: async () => {
@@ -417,7 +526,7 @@ export const getHistoricalData = async () => {
 }
 
 export const healthCheck = async () => {
-  const response = await api.get('/health/')
+  const response = await api.get('/health/', { skipAuth: true })
   return unwrapApiEnvelope(response.data)
 }
 
