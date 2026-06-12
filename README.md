@@ -3,17 +3,26 @@
 TradeIQ AI is a high-performance, Streamlit-powered SaaS application for stock market analysis, AI-driven predictions, and portfolio management.
 
 ## 🚀 Key Features
-- **AI Predictions**: Real-time stock forecasting using machine learning.
-- **Secure Authentication**: User registration and login with bcrypt password hashing.
-- **Interactive Charts**: Professional candlestick charts with technical indicators.
-- **Market Sentiment**: Trend detection and confidence scoring.
-- **Portfolio Tracking**: (Coming Soon) Manage your assets and watchlists.
+- **AI Predictions**: Real-time stock forecasting using machine learning with confidence scores.
+- **Strict RBAC & Admin Panel**: Secure routing for Users and Admins. Manage users, monitor AI models, view audit logs, and more.
+- **Secure Authentication**: User registration and login with bcrypt password hashing, JWT validation, and password strength checks.
+- **Interactive Dashboards**: Professional real-time portfolio dashboards, live market data, and interactive Plotly charts.
+- **Market Alerts**: Set price, stop-loss, and target alerts.
+- **Portfolio Tracking**: Manage your assets, calculate P/L dynamically, and manage watchlists securely.
+
+## 🔑 Admin Credentials (Seeded)
+To access the Admin Dashboards and manage the platform, use the following default credentials:
+- **Email:** `admin@tredalq.com`
+- **Password:** `Admin@123!`
+
+*(Make sure to change the admin password in production!)*
 
 ## 🛠️ Tech Stack
 - **Frontend/UI**: Streamlit
-- **Backend**: Python
-- **Database**: SQLAlchemy (SQLite for local, PostgreSQL ready)
+- **Backend**: Python 3.13
+- **Database**: SQLite / SQLAlchemy ORM (PostgreSQL ready)
 - **Data Source**: Yahoo Finance (yfinance)
+- **Security**: PyJWT, bcrypt
 
 ## 📦 Installation
 
@@ -34,7 +43,13 @@ TradeIQ AI is a high-performance, Streamlit-powered SaaS application for stock m
    pip install -r requirements.txt
    ```
 
-4. **Run the App**:
+4. **Initialize the Database**:
+   ```bash
+   python reset_db.py
+   python insert_admin.py
+   ```
+
+5. **Run the App**:
    ```bash
    streamlit run streamlit_app.py
    ```

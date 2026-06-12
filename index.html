@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TREDALQ - AI Trading Intelligence</title>
+
+  <!-- React 18 -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Recharts & PropTypes -->
+  <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
+
+  <!-- Lucide Icons (Vanilla) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            app: {
+              bg: '#0d1117',
+              card: '#161b22',
+              border: '#21262d',
+              primary: '#4f46e5',
+              secondary: '#7c3aed',
+              success: '#22c55e',
+              danger: '#ef4444',
+              warning: '#eab308',
+              textPrimary: '#f0f6fc',
+              textMuted: '#8b949e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #0d1117; color: #f0f6fc; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0d1117; }
+    ::-webkit-scrollbar-thumb { background: #21262d; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #8b949e; }
+    .card-border { border: 1px solid #21262d; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+    const { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } = window.Recharts;
+
+    // --- ICON HELPER ---
+    const Icon = ({ name, size = 20, className = "" }) => {
+      const iconRef = React.useRef(null);
+      useEffect(() => {
+        if (iconRef.current && window.lucide) {
+          window.lucide.createIcons({
+            icons: window.lucide.icons,
+            nameAttr: 'data-lucide',
+            root: iconRef.current.parentNode
+          });
+        }
+      }, [name]);
+      return <i ref={iconRef} data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></i>;
+    };
+
+    // --- MOCK DATA ---
+    const MOCK_USERS = [
+      { id: 1, name: "Om Machhi", email: "om123@gmail.com", password: "Ommachhi@123", role: "User" },
+      { id: 2, name: "Admin User", email: "admin@tredalq.com", password: "Admin@123", role: "Admin" }
+    ];
+
+    const MOCK_STOCKS = [
+      { symbol: "RELIANCE", name: "Reliance Industries", price: 2823.50, change: 34.20, changePct: 1.23, vol: "12.4M", high: 3024, low: 2180 },
+      { symbol: "TCS", name: "Tata Consultancy", price: 3389.00, change: -22.50, changePct: -0.66, vol: "8.1M", high: 3780, low: 3056 },
+      { symbol: "INFY", name: "Infosys", price: 1562.75, change: 18.90, changePct: 1.22, vol: "15.2M", high: 1741, low: 1351 },
+      { symbol: "HDFCBANK", name: "HDFC Bank", price: 1710.40, change: 9.30, changePct: 0.55, vol: "9.8M", high: 1880, low: 1430 },
+      { symbol: "ICICIBANK", name: "ICICI Bank", price: 1142.60, change: -5.70, changePct: -0.50, vol: "11.3M", high: 1290, low: 940 },
+      { symbol: "BAJFINANCE", name: "Bajaj Finance", price: 7234.00, change: 123.40, changePct: 1.74, vol: "3.4M", high: 8190, low: 6200 },
+      { symbol: "WIPRO", name: "Wipro Ltd", price: 448.20, change: -3.80, changePct: -0.84, vol: "6.7M", high: 531, low: 391 },
+      { symbol: "TATAMOTORS", name: "Tata Motors", price: 923.40, change: 14.60, changePct: 1.61, vol: "18.9M", high: 1063, low: 614 },
+      { symbol: "SUNPHARMA", name: "Sun Pharmaceutical", price: 1623.80, change: 22.10, changePct: 1.38, vol: "5.2M", high: 1740, low: 1148 },
+      { symbol: "MARUTI", name: "Maruti Suzuki", price: 12840.00, change: -180.50, changePct: -1.39, vol: "2.1M", high: 13680, low: 9820 }
+    ];
+
+    const MOCK_HOLDINGS = [
+      { symbol: "RELIANCE", qty: 20, buy: 2650, current: 2823.50, invested: 53000, value: 56470, pnl: 3470, pnlPct: 6.5 },
+      { symbol: "TCS", qty: 10, buy: 3200, current: 3389, invested: 32000, value: 33890, pnl: 1890, pnlPct: 5.9 },
+      { symbol: "INFY", qty: 30, buy: 1480, current: 1562.75, invested: 44400, value: 46882.5, pnl: 2482.5, pnlPct: 5.6 },
+      { symbol: "HDFCBANK", qty: 25, buy: 1820, current: 1710.40, invested: 45500, value: 42760, pnl: -2740, pnlPct: -6.0 },
+      { symbol: "BAJFINANCE", qty: 5, buy: 6800, current: 7234, invested: 34000, value: 36170, pnl: 2170, pnlPct: 6.4 },
+      { symbol: "TATAMOTORS", qty: 40, buy: 870, current: 923.40, invested: 34800, value: 36936, pnl: 2136, pnlPct: 6.1 },
+      { symbol: "WIPRO", qty: 100, buy: 460, current: 448.20, invested: 46000, value: 44820, pnl: -1180, pnlPct: -2.6 }
+    ];
+
+    // --- HELPERS ---
+    const fmtCurrency = (val) => '₹' + Number(val).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+    const fmtColor = (val) => val > 0 ? "text-app-success" : val < 0 ? "text-app-danger" : "text-app-textMuted";
+
+    // --- COMPONENTS ---
+
+    const AuthLeftPanel = () => (
+      <div className="w-full lg:w-1/2 p-12 bg-app-bg border-r card-border flex flex-col justify-center relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-app-primary opacity-10 blur-[100px] rounded-full pointer-events-none"></div>
+        <div className="z-10 relative">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-b from-app-primary to-app-secondary flex items-center justify-center font-black text-2xl shadow-xl shadow-app-primary/20">TQ</div>
+            <div>
+              <h1 className="text-4xl font-black tracking-tight">TREDALQ</h1>
+              <p className="text-app-primary font-semibold text-lg">Trade Smarter with AI</p>
+            </div>
+          </div>
+          <div className="space-y-6">
+            <div className="bg-white/5 p-4 rounded-xl border-l-4 border-app-primary">
+              <div className="flex items-center gap-3 font-bold mb-1"><Icon name="cpu" size={20} className="text-app-primary"/> AI-Powered Intelligence</div>
+              <p className="text-app-textMuted text-sm pl-8">Access high-accuracy buy/sell signals and target prediction analytics.</p>
+            </div>
+            <div className="bg-white/5 p-4 rounded-xl border-l-4 border-app-primary">
+              <div className="flex items-center gap-3 font-bold mb-1"><Icon name="bar-chart-2" size={20} className="text-app-success"/> Live Watchlists</div>
+              <p className="text-app-textMuted text-sm pl-8">Monitor global and Indian markets with clean dashboards and real-time updates.</p>
+            </div>
+            <div className="bg-white/5 p-4 rounded-xl border-l-4 border-app-primary">
+              <div className="flex items-center gap-3 font-bold mb-1"><Icon name="briefcase" size={20} className="text-app-secondary"/> Portfolio Management</div>
+              <p className="text-app-textMuted text-sm pl-8">Track execution metrics, capital gains, and key transaction histories securely.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+
+    const LoginView = ({ setAuthView, onLogin }) => {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [showPassword, setShowPassword] = useState(false);
+      const [error, setError] = useState("");
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onLogin(email, password, setError);
+      };
+
+      return (
+        <div className="flex w-full min-h-screen bg-app-bg text-app-textPrimary">
+          <AuthLeftPanel />
+          <div className="w-full lg:w-1/2 p-8 lg:p-24 flex items-center bg-gradient-to-b from-app-bg to-[#09101A]">
+            <div className="w-full max-w-md mx-auto">
+              <h2 className="text-3xl font-bold mb-2">Sign In</h2>
+              <p className="text-app-textMuted mb-8">Access your automated trading dashboard</p>
+              
+              {error && <div className="bg-app-danger/10 border border-app-danger text-app-danger p-3 rounded-lg mb-6">{error}</div>}
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Email Address</label>
+                  <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} className="w-full bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary transition-colors" placeholder="name@domain.com" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Password</label>
+                  <div className="relative">
+                    <input type={showPassword ? "text" : "password"} value={password} onChange={(e)=>setPassword(e.target.value)} className="w-full bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary transition-colors" placeholder="••••••••" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-3.5 text-app-textMuted hover:text-white">
+                      <Icon name={showPassword ? "eye-off" : "eye"} size={20} />
+                    </button>
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-gradient-to-b from-app-primary to-[#4338ca] hover:from-[#5a52f5] hover:to-app-primary text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-app-primary/30">
+                  Sign In
+                </button>
+              </form>
+              
+              <div className="mt-8 text-center text-app-textMuted">
+                Don't have an account? <button onClick={() => setAuthView("register")} className="text-app-primary font-bold hover:underline">Register Now</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const RegisterView = ({ setAuthView, onRegister }) => {
+      const [name, setName] = useState("");
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [confirm, setConfirm] = useState("");
+      const [error, setError] = useState("");
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onRegister(name, email, password, confirm, setError);
+      };
+
+      return (
+        <div className="flex w-full min-h-screen bg-app-bg text-app-textPrimary">
+          <AuthLeftPanel />
+          <div className="w-full lg:w-1/2 p-8 lg:p-24 flex items-center bg-gradient-to-b from-app-bg to-[#09101A]">
+            <div className="w-full max-w-md mx-auto">
+              <h2 className="text-3xl font-bold mb-2">Create Account</h2>
+              <p className="text-app-textMuted mb-8">Get started with AI-driven market intelligence</p>
+              
+              {error && <div className="bg-app-danger/10 border border-app-danger text-app-danger p-3 rounded-lg mb-6">{error}</div>}
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Full Name</label>
+                  <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="w-full bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary" placeholder="John Doe" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Email Address</label>
+                  <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} className="w-full bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary" placeholder="name@domain.com" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Password</label>
+                  <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} className="w-full bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary" placeholder="Minimum 8 characters" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Confirm Password</label>
+                  <input type="password" value={confirm} onChange={(e)=>setConfirm(e.target.value)} className="w-full bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary" placeholder="Re-type password" />
+                </div>
+                <button type="submit" className="w-full bg-gradient-to-b from-app-primary to-[#4338ca] hover:from-[#5a52f5] hover:to-app-primary text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-app-primary/30 mt-2">
+                  Create Account
+                </button>
+              </form>
+              
+              <div className="mt-8 text-center text-app-textMuted">
+                Already have an account? <button onClick={() => setAuthView("login")} className="text-app-primary font-bold hover:underline">Sign In Here</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // --- MAIN APP VIEWS ---
+    
+    const DashboardView = () => {
+      const data = Array.from({length: 30}).map((_, i) => ({
+        day: `Day ${i+1}`,
+        value: 420000 + (i * 2000) + (Math.random() * 10000 - 5000)
+      }));
+
+      return (
+        <div className="space-y-6 animate-fade-in">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Portfolio Value</div>
+              <div className="text-2xl font-bold">{fmtCurrency(482350)}</div>
+              <div className="text-app-success text-sm mt-1 flex items-center gap-1"><Icon name="trending-up" size={14}/> +2.4%</div>
+            </div>
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Today's P&L</div>
+              <div className="text-2xl font-bold text-app-success">{fmtCurrency(11240)}</div>
+              <div className="text-app-success text-sm mt-1 flex items-center gap-1"><Icon name="arrow-up-right" size={14}/> +1.8%</div>
+            </div>
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Active Positions</div>
+              <div className="text-2xl font-bold">7</div>
+              <div className="text-app-textMuted text-sm mt-1">across 5 sectors</div>
+            </div>
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Win Rate</div>
+              <div className="text-2xl font-bold text-app-primary">68.3%</div>
+              <div className="text-app-textMuted text-sm mt-1">last 30 days</div>
+            </div>
+          </div>
+
+          <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+            <h3 className="text-lg font-bold mb-4">Portfolio Performance (30 Days)</h3>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data} margin={{ top: 5, right: 0, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#21262d" vertical={false} />
+                  <XAxis dataKey="day" stroke="#8b949e" tick={{fill: '#8b949e', fontSize: 12}} />
+                  <YAxis domain={['auto', 'auto']} tickFormatter={(val) => '₹' + (val/1000).toFixed(0) + 'k'} stroke="#8b949e" tick={{fill: '#8b949e', fontSize: 12}} />
+                  <Tooltip contentStyle={{ backgroundColor: '#161b22', borderColor: '#21262d', borderRadius: '8px' }} itemStyle={{ color: '#f0f6fc' }} formatter={(val) => fmtCurrency(val)} />
+                  <Line type="monotone" dataKey="value" stroke="#4f46e5" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-app-card card-border rounded-xl overflow-hidden shadow-lg">
+            <div className="p-5 border-b border-app-border">
+              <h3 className="text-lg font-bold">Recent Signals</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-black/20 text-app-textMuted text-xs uppercase">
+                  <tr>
+                    <th className="px-5 py-3">Symbol</th>
+                    <th className="px-5 py-3">Signal</th>
+                    <th className="px-5 py-3">Target</th>
+                    <th className="px-5 py-3">Stop Loss</th>
+                    <th className="px-5 py-3">Confidence</th>
+                    <th className="px-5 py-3">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-app-border">
+                  {[
+                    { s: "RELIANCE", sig: "BUY", t: 2850, sl: 2780, c: "87%", time: "09:45 AM" },
+                    { s: "TCS", sig: "SELL", t: 3420, sl: 3510, c: "73%", time: "10:12 AM" },
+                    { s: "INFY", sig: "BUY", t: 1580, sl: 1540, c: "91%", time: "10:30 AM" },
+                    { s: "HDFC", sig: "BUY", t: 1720, sl: 1680, c: "82%", time: "11:00 AM" },
+                    { s: "WIPRO", sig: "SELL", t: 450, sl: 470, c: "65%", time: "11:25 AM" },
+                  ].map((r, i) => (
+                    <tr key={i} className="hover:bg-white/5 transition-colors">
+                      <td className="px-5 py-4 font-bold">{r.s}</td>
+                      <td className="px-5 py-4">
+                        <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${r.sig === 'BUY' ? 'bg-app-success/10 text-app-success border border-app-success/20' : 'bg-app-danger/10 text-app-danger border border-app-danger/20'}`}>
+                          {r.sig}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-app-success">{fmtCurrency(r.t)}</td>
+                      <td className="px-5 py-4 text-app-danger">{fmtCurrency(r.sl)}</td>
+                      <td className="px-5 py-4">{r.c}</td>
+                      <td className="px-5 py-4 text-app-textMuted">{r.time}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const MarketView = () => {
+      const [search, setSearch] = useState("");
+      
+      const filtered = MOCK_STOCKS.filter(s => 
+        s.symbol.toLowerCase().includes(search.toLowerCase()) || 
+        s.name.toLowerCase().includes(search.toLowerCase())
+      );
+
+      return (
+        <div className="space-y-6">
+          <div className="relative">
+            <Icon name="search" size={20} className="absolute left-4 top-3.5 text-app-textMuted" />
+            <input 
+              type="text" 
+              placeholder="Search stocks by name or symbol..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-app-card border border-app-border rounded-xl pl-12 pr-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary transition-colors shadow-sm"
+            />
+          </div>
+
+          <div className="bg-app-card card-border rounded-xl overflow-hidden shadow-lg">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-black/20 text-app-textMuted text-xs uppercase">
+                  <tr>
+                    <th className="px-5 py-4">Symbol</th>
+                    <th className="px-5 py-4">Company</th>
+                    <th className="px-5 py-4 text-right">Price</th>
+                    <th className="px-5 py-4 text-right">Change</th>
+                    <th className="px-5 py-4 text-right">Change%</th>
+                    <th className="px-5 py-4 text-right">Volume</th>
+                    <th className="px-5 py-4 text-right">52W High</th>
+                    <th className="px-5 py-4 text-right">52W Low</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-app-border">
+                  {filtered.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-app-textMuted">No stocks found.</td></tr>}
+                  {filtered.map((s, i) => (
+                    <tr key={i} className="hover:bg-white/5 transition-colors">
+                      <td className="px-5 py-3 font-bold text-app-primary">{s.symbol}</td>
+                      <td className="px-5 py-3">{s.name}</td>
+                      <td className="px-5 py-3 text-right font-medium">{fmtCurrency(s.price)}</td>
+                      <td className={`px-5 py-3 text-right font-medium ${fmtColor(s.change)}`}>{s.change > 0 ? '+'+s.change.toFixed(2) : s.change.toFixed(2)}</td>
+                      <td className={`px-5 py-3 text-right font-medium ${fmtColor(s.changePct)}`}>{s.changePct > 0 ? '+'+s.changePct.toFixed(2) : s.changePct.toFixed(2)}%</td>
+                      <td className="px-5 py-3 text-right text-app-textMuted">{s.vol}</td>
+                      <td className="px-5 py-3 text-right">{fmtCurrency(s.high)}</td>
+                      <td className="px-5 py-3 text-right">{fmtCurrency(s.low)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const PredictionView = () => {
+      const [selected, setSelected] = useState(MOCK_STOCKS[0].symbol);
+      const stock = MOCK_STOCKS.find(s => s.symbol === selected);
+      
+      const isBuy = MOCK_STOCKS.indexOf(stock) % 2 === 0;
+      const target = isBuy ? stock.price * 1.04 : stock.price * 0.96;
+      const sl = isBuy ? stock.price * 0.98 : stock.price * 1.02;
+      const conf = 70 + (MOCK_STOCKS.indexOf(stock) * 3) % 25;
+      
+      const barData = [
+        { day: 'D-4', str: Math.random()*100 },
+        { day: 'D-3', str: Math.random()*100 },
+        { day: 'D-2', str: Math.random()*100 },
+        { day: 'D-1', str: Math.random()*100 },
+        { day: 'Today', str: conf },
+      ];
+
+      return (
+        <div className="space-y-6">
+          <div className="w-full md:w-1/3">
+            <label className="block text-sm font-medium text-app-textMuted mb-2">Select Stock for Analysis</label>
+            <select value={selected} onChange={e=>setSelected(e.target.value)} className="w-full bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary appearance-none">
+              {MOCK_STOCKS.map(s => <option key={s.symbol} value={s.symbol}>{s.symbol} - {s.name}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-app-card card-border rounded-xl p-6 shadow-lg relative overflow-hidden">
+              <div className={`absolute top-0 right-0 w-32 h-32 blur-[60px] opacity-20 pointer-events-none rounded-full ${isBuy ? 'bg-app-success' : 'bg-app-danger'}`}></div>
+              
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold">{stock.name}</h3>
+                  <div className="text-app-textMuted">{stock.symbol} • {fmtCurrency(stock.price)}</div>
+                </div>
+                <div className={`px-4 py-1.5 rounded-full text-sm font-black border tracking-wider ${isBuy ? 'bg-app-success/10 text-app-success border-app-success/30' : 'bg-app-danger/10 text-app-danger border-app-danger/30'}`}>
+                  {isBuy ? 'STRONG BUY' : 'SELL SIGNAL'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-black/20 rounded-lg p-4 border border-white/5">
+                  <div className="text-sm text-app-textMuted mb-1">Target Price</div>
+                  <div className="text-xl font-bold text-app-success">{fmtCurrency(target)}</div>
+                </div>
+                <div className="bg-black/20 rounded-lg p-4 border border-white/5">
+                  <div className="text-sm text-app-textMuted mb-1">Stop Loss</div>
+                  <div className="text-xl font-bold text-app-danger">{fmtCurrency(sl)}</div>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-app-textMuted">AI Confidence Level</span>
+                  <span className="font-bold text-app-primary">{conf}%</span>
+                </div>
+                <div className="w-full bg-black/40 rounded-full h-2">
+                  <div className="bg-app-primary h-2 rounded-full" style={{width: `${conf}%`}}></div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-app-primary/10 border border-app-primary/20 rounded-lg text-sm text-blue-200 leading-relaxed">
+                <strong>Analysis:</strong> Deep learning models indicate a {isBuy ? 'bullish continuation' : 'bearish reversal'} pattern forming on the 4H timeframe. Volume profile supports the directional bias alongside favorable MACD crossover dynamics.
+              </div>
+            </div>
+
+            <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+              <h3 className="text-lg font-bold mb-4">Signal Strength Trend</h3>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#21262d" vertical={false} />
+                    <XAxis dataKey="day" stroke="#8b949e" tick={{fill: '#8b949e', fontSize: 12}} />
+                    <YAxis stroke="#8b949e" tick={{fill: '#8b949e', fontSize: 12}} />
+                    <Tooltip contentStyle={{ backgroundColor: '#161b22', borderColor: '#21262d', borderRadius: '8px' }} cursor={{fill: '#21262d'}} />
+                    <Bar dataKey="str" fill={isBuy ? "#22c55e" : "#ef4444"} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-app-card card-border rounded-xl overflow-hidden shadow-lg mt-6">
+            <div className="p-5 border-b border-app-border">
+              <h3 className="text-lg font-bold">Prediction History</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-black/20 text-app-textMuted text-xs uppercase">
+                  <tr>
+                    <th className="px-5 py-3">Date</th>
+                    <th className="px-5 py-3">Symbol</th>
+                    <th className="px-5 py-3">Signal</th>
+                    <th className="px-5 py-3">Target</th>
+                    <th className="px-5 py-3">Actual Reached</th>
+                    <th className="px-5 py-3">Result</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-app-border">
+                  {[
+                    { d: '12 May', s: 'RELIANCE', sig: 'BUY', t: 2800, a: 2815, res: 'WIN' },
+                    { d: '09 May', s: 'HDFCBANK', sig: 'BUY', t: 1750, a: 1720, res: 'LOSS' },
+                    { d: '05 May', s: 'TCS', sig: 'SELL', t: 3400, a: 3390, res: 'WIN' },
+                    { d: '01 May', s: 'INFY', sig: 'BUY', t: 1500, a: 1520, res: 'WIN' },
+                    { d: '28 Apr', s: 'WIPRO', sig: 'SELL', t: 440, a: 450, res: 'LOSS' },
+                  ].map((r, i) => (
+                    <tr key={i} className="hover:bg-white/5">
+                      <td className="px-5 py-3 text-app-textMuted">{r.d}</td>
+                      <td className="px-5 py-3 font-bold">{r.s}</td>
+                      <td className="px-5 py-3">{r.sig}</td>
+                      <td className="px-5 py-3">{fmtCurrency(r.t)}</td>
+                      <td className="px-5 py-3">{fmtCurrency(r.a)}</td>
+                      <td className="px-5 py-3">
+                        <span className={`px-2 py-1 text-xs font-bold rounded ${r.res === 'WIN' ? 'bg-app-success/20 text-app-success' : 'bg-app-danger/20 text-app-danger'}`}>
+                          {r.res}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const AnalyticsView = () => {
+      const pieData = [
+        { name: 'BUY Signals', value: 58, color: '#22c55e' },
+        { name: 'SELL Signals', value: 42, color: '#ef4444' }
+      ];
+      
+      const pnlData = [
+        { month: 'Jan', pnl: -8900 },
+        { month: 'Feb', pnl: 15400 },
+        { month: 'Mar', pnl: 42300 },
+        { month: 'Apr', pnl: 21500 },
+        { month: 'May', pnl: -3200 },
+        { month: 'Jun', pnl: 18700 },
+      ];
+
+      return (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+              <h3 className="text-lg font-bold mb-6">Signal Distribution</h3>
+              <div className="h-[260px] w-full flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={5} dataKey="value">
+                      {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: '#161b22', borderColor: '#21262d', borderRadius: '8px', color: '#fff' }} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+              <h3 className="text-lg font-bold mb-6">Monthly P&L (₹)</h3>
+              <div className="h-[260px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={pnlData} margin={{ top: 5, right: 0, left: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#21262d" vertical={false} />
+                    <XAxis dataKey="month" stroke="#8b949e" tick={{fill: '#8b949e', fontSize: 12}} />
+                    <YAxis stroke="#8b949e" tickFormatter={(v)=>v/1000+'k'} tick={{fill: '#8b949e', fontSize: 12}} />
+                    <Tooltip cursor={{fill: '#21262d'}} contentStyle={{ backgroundColor: '#161b22', borderColor: '#21262d', borderRadius: '8px' }} formatter={(val) => fmtCurrency(val)} />
+                    <Bar dataKey="pnl">
+                      {pnlData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.pnl > 0 ? '#22c55e' : '#ef4444'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+            <h3 className="text-lg font-bold mb-4 border-b border-app-border pb-4">Performance Statistics</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              {[
+                { l: "Total Trades", v: "124" },
+                { l: "Profitable Trades", v: "84 (67.7%)", color: "text-app-success" },
+                { l: "Avg Profit / Trade", v: "₹1,340", color: "text-app-success" },
+                { l: "Max Drawdown", v: "-8.2%", color: "text-app-danger" },
+                { l: "Sharpe Ratio", v: "1.84" },
+                { l: "Avg Hold Duration", v: "2.3 days" },
+                { l: "Best Month", v: "March +₹42,300", color: "text-app-success" },
+                { l: "Worst Month", v: "January -₹8,900", color: "text-app-danger" },
+              ].map((s, i) => (
+                <div key={i} className="p-4 bg-black/20 rounded-lg border border-white/5">
+                  <div className="text-sm text-app-textMuted mb-1">{s.l}</div>
+                  <div className={`text-xl font-bold ${s.color || ''}`}>{s.v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const PortfolioView = () => {
+      return (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Total Invested</div>
+              <div className="text-2xl font-bold">{fmtCurrency(380000)}</div>
+            </div>
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Current Value</div>
+              <div className="text-2xl font-bold text-app-primary">{fmtCurrency(482350)}</div>
+            </div>
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Unrealized P&L</div>
+              <div className="text-2xl font-bold text-app-success">+₹1,02,350</div>
+              <div className="text-app-success text-sm mt-1">+26.9%</div>
+            </div>
+            <div className="bg-app-card card-border rounded-xl p-5 shadow-lg">
+              <div className="text-app-textMuted text-sm font-semibold mb-1">Cash Available</div>
+              <div className="text-2xl font-bold">{fmtCurrency(117650)}</div>
+            </div>
+          </div>
+
+          <div className="bg-app-card card-border rounded-xl overflow-hidden shadow-lg">
+            <div className="p-5 border-b border-app-border">
+              <h3 className="text-lg font-bold">Current Holdings</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-black/20 text-app-textMuted text-xs uppercase">
+                  <tr>
+                    <th className="px-5 py-4">Symbol</th>
+                    <th className="px-5 py-4 text-right">Qty</th>
+                    <th className="px-5 py-4 text-right">Avg Buy Price</th>
+                    <th className="px-5 py-4 text-right">Current Price</th>
+                    <th className="px-5 py-4 text-right">Invested</th>
+                    <th className="px-5 py-4 text-right">Current Value</th>
+                    <th className="px-5 py-4 text-right">P&L</th>
+                    <th className="px-5 py-4 text-right">P&L%</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-app-border">
+                  {MOCK_HOLDINGS.map((h, i) => (
+                    <tr key={i} className="hover:bg-white/5 transition-colors">
+                      <td className="px-5 py-3 font-bold">{h.symbol}</td>
+                      <td className="px-5 py-3 text-right">{h.qty}</td>
+                      <td className="px-5 py-3 text-right">{fmtCurrency(h.buy)}</td>
+                      <td className="px-5 py-3 text-right font-medium">{fmtCurrency(h.current)}</td>
+                      <td className="px-5 py-3 text-right">{fmtCurrency(h.invested)}</td>
+                      <td className="px-5 py-3 text-right">{fmtCurrency(h.value)}</td>
+                      <td className={`px-5 py-3 text-right font-bold ${fmtColor(h.pnl)}`}>{h.pnl > 0 ? '+'+fmtCurrency(h.pnl) : fmtCurrency(h.pnl)}</td>
+                      <td className={`px-5 py-3 text-right font-bold ${fmtColor(h.pnlPct)}`}>{h.pnlPct > 0 ? '+'+h.pnlPct : h.pnlPct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const WatchlistView = () => {
+      const [wl, setWl] = useState(["RELIANCE", "TCS", "INFY"]);
+      const [input, setInput] = useState("");
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        const sym = input.trim().toUpperCase();
+        if(sym && !wl.includes(sym)) {
+          setWl([...wl, sym]);
+          setInput("");
+        }
+      };
+
+      const remove = (sym) => setWl(wl.filter(s => s !== sym));
+
+      const items = wl.map(sym => MOCK_STOCKS.find(s => s.symbol === sym) || { symbol: sym, name: "Unknown", price: 0, change: 0, changePct: 0 });
+
+      return (
+        <div className="space-y-6 max-w-4xl">
+          <form onSubmit={handleAdd} className="flex gap-4">
+            <input 
+              type="text" 
+              placeholder="Enter stock symbol (e.g. HDFCBANK)" 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="flex-1 bg-app-card border border-app-border rounded-xl px-4 py-3 text-app-textPrimary focus:outline-none focus:border-app-primary uppercase"
+            />
+            <button type="submit" className="bg-app-primary hover:bg-app-primary/90 text-white font-bold py-3 px-6 rounded-xl transition-all flex items-center gap-2">
+              <Icon name="plus" size={18}/> Add to Watchlist
+            </button>
+          </form>
+
+          <div className="bg-app-card card-border rounded-xl overflow-hidden shadow-lg">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-black/20 text-app-textMuted text-xs uppercase">
+                  <tr>
+                    <th className="px-5 py-4">Symbol</th>
+                    <th className="px-5 py-4">Company</th>
+                    <th className="px-5 py-4 text-right">Price</th>
+                    <th className="px-5 py-4 text-right">Change</th>
+                    <th className="px-5 py-4 text-right">Change%</th>
+                    <th className="px-5 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-app-border">
+                  {items.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-app-textMuted">Watchlist is empty.</td></tr>}
+                  {items.map((s, i) => (
+                    <tr key={i} className="hover:bg-white/5 transition-colors">
+                      <td className="px-5 py-4 font-bold text-app-primary">{s.symbol}</td>
+                      <td className="px-5 py-4">{s.name}</td>
+                      <td className="px-5 py-4 text-right font-medium">{fmtCurrency(s.price)}</td>
+                      <td className={`px-5 py-4 text-right font-medium ${fmtColor(s.change)}`}>{s.change > 0 ? '+'+s.change.toFixed(2) : s.change.toFixed(2)}</td>
+                      <td className={`px-5 py-4 text-right font-medium ${fmtColor(s.changePct)}`}>{s.changePct > 0 ? '+'+s.changePct.toFixed(2) : s.changePct.toFixed(2)}%</td>
+                      <td className="px-5 py-4 text-right">
+                        <button onClick={()=>remove(s.symbol)} className="text-app-textMuted hover:text-app-danger transition-colors p-2 bg-white/5 hover:bg-app-danger/10 rounded-lg inline-flex">
+                          <Icon name="trash-2" size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const AlertsView = () => {
+      const [alerts, setAlerts] = useState([
+        { id: 1, sym: "RELIANCE", type: "Price Above", target: 2900, status: "Active" },
+        { id: 2, sym: "TCS", type: "AI Signal: SELL", target: null, status: "Active" },
+        { id: 3, sym: "INFY", type: "Price Below", target: 1500, status: "Triggered" }
+      ]);
+
+      const [sym, setSym] = useState("RELIANCE");
+      const [type, setType] = useState("Price Above");
+      const [target, setTarget] = useState("");
+
+      const isAi = type.includes("AI Signal");
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        setAlerts([{ id: Date.now(), sym, type, target: isAi ? null : Number(target), status: "Active" }, ...alerts]);
+        setTarget("");
+      };
+
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+              <h3 className="text-lg font-bold mb-4">Create New Alert</h3>
+              <form onSubmit={handleAdd} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Stock Symbol</label>
+                  <select value={sym} onChange={e=>setSym(e.target.value)} className="w-full bg-[#0d1117] border border-app-border rounded-lg px-3 py-2 text-app-textPrimary focus:outline-none focus:border-app-primary appearance-none">
+                    {MOCK_STOCKS.map(s => <option key={s.symbol} value={s.symbol}>{s.symbol}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-app-textMuted mb-1">Alert Type</label>
+                  <select value={type} onChange={e=>setType(e.target.value)} className="w-full bg-[#0d1117] border border-app-border rounded-lg px-3 py-2 text-app-textPrimary focus:outline-none focus:border-app-primary appearance-none">
+                    <option>Price Above</option>
+                    <option>Price Below</option>
+                    <option>AI Signal: BUY</option>
+                    <option>AI Signal: SELL</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={`block text-sm font-medium mb-1 ${isAi ? 'text-app-textMuted/50' : 'text-app-textMuted'}`}>Target Price</label>
+                  <input type="number" value={target} onChange={e=>setTarget(e.target.value)} disabled={isAi} required={!isAi} placeholder={isAi ? "N/A" : "e.g. 2900"} className="w-full bg-[#0d1117] border border-app-border rounded-lg px-3 py-2 text-app-textPrimary focus:outline-none focus:border-app-primary disabled:opacity-50" />
+                </div>
+                <button type="submit" className="w-full bg-app-primary hover:bg-app-primary/90 text-white font-bold py-2.5 px-4 rounded-lg mt-2 transition-all">
+                  Create Alert
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 space-y-4">
+            {alerts.length === 0 && <div className="text-app-textMuted text-center py-10">No alerts configured.</div>}
+            {alerts.map(a => (
+              <div key={a.id} className="bg-app-card card-border rounded-xl p-5 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-4">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${a.status === 'Triggered' ? 'bg-app-warning/20 text-app-warning' : 'bg-app-primary/20 text-app-primary'}`}>
+                    <Icon name={a.status === 'Triggered' ? 'alert-circle' : 'bell'} size={20} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-lg">{a.sym}</h4>
+                    <div className="text-app-textMuted text-sm">
+                      {a.type} {a.target && <span className="font-medium text-white ml-1">{fmtCurrency(a.target)}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6">
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold border ${a.status === 'Triggered' ? 'bg-app-warning/10 text-app-warning border-app-warning/20' : 'bg-app-success/10 text-app-success border-app-success/20'}`}>
+                    {a.status}
+                  </span>
+                  <button onClick={() => setAlerts(alerts.filter(x => x.id !== a.id))} className="text-app-textMuted hover:text-app-danger transition-colors">
+                    <Icon name="trash-2" size={18} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    const SettingsView = ({ user }) => {
+      const [name, setName] = useState(user.name);
+      const [email, setEmail] = useState(user.email);
+      const [profMsg, setProfMsg] = useState("");
+
+      const [autoRef, setAutoRef] = useState(true);
+      const [notifs, setNotifs] = useState(true);
+      const [mktView, setMktView] = useState("NSE");
+      const [prefMsg, setPrefMsg] = useState("");
+
+      const handleProfile = (e) => {
+        e.preventDefault();
+        setProfMsg("Profile updated successfully.");
+        setTimeout(() => setProfMsg(""), 3000);
+      };
+
+      const handlePrefs = (e) => {
+        e.preventDefault();
+        setPrefMsg("Preferences saved.");
+        setTimeout(() => setPrefMsg(""), 3000);
+      };
+
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl">
+          <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+            <h3 className="text-lg font-bold mb-6 border-b border-app-border pb-4">Profile Settings</h3>
+            {profMsg && <div className="mb-4 p-3 bg-app-success/10 border border-app-success text-app-success rounded-lg flex items-center gap-2"><Icon name="check-circle-2" size={16}/> {profMsg}</div>}
+            <form onSubmit={handleProfile} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-app-textMuted mb-1">Full Name</label>
+                <input type="text" value={name} onChange={e=>setName(e.target.value)} className="w-full bg-[#0d1117] border border-app-border rounded-lg px-4 py-2.5 text-app-textPrimary focus:outline-none focus:border-app-primary" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-app-textMuted mb-1">Email Address</label>
+                <input type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full bg-[#0d1117] border border-app-border rounded-lg px-4 py-2.5 text-app-textPrimary focus:outline-none focus:border-app-primary" />
+              </div>
+              <div className="pt-2">
+                <button type="submit" className="bg-app-primary hover:bg-app-primary/90 text-white font-bold py-2.5 px-6 rounded-lg transition-all">Save Changes</button>
+              </div>
+            </form>
+          </div>
+
+          <div className="bg-app-card card-border rounded-xl p-6 shadow-lg">
+            <h3 className="text-lg font-bold mb-6 border-b border-app-border pb-4">Application Preferences</h3>
+            {prefMsg && <div className="mb-4 p-3 bg-app-success/10 border border-app-success text-app-success rounded-lg flex items-center gap-2"><Icon name="check-circle-2" size={16}/> {prefMsg}</div>}
+            <form onSubmit={handlePrefs} className="space-y-6">
+              
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">Auto-refresh Live Quotes</div>
+                  <div className="text-sm text-app-textMuted">Refresh data every 5 seconds</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={autoRef} onChange={e=>setAutoRef(e.target.checked)} />
+                  <div className="w-11 h-6 bg-app-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-app-primary"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">Email Notifications</div>
+                  <div className="text-sm text-app-textMuted">Receive AI signals via email</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={notifs} onChange={e=>setNotifs(e.target.checked)} />
+                  <div className="w-11 h-6 bg-app-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-app-primary"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between opacity-60" title="Dark mode is always enabled">
+                <div>
+                  <div className="font-medium">Dark Mode</div>
+                  <div className="text-sm text-app-textMuted">Default eye-care theme</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-not-allowed">
+                  <input type="checkbox" className="sr-only peer" checked={true} disabled />
+                  <div className="w-11 h-6 bg-app-primary rounded-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:translate-x-full after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5"></div>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-app-textMuted mb-2">Default Market View</label>
+                <select value={mktView} onChange={e=>setMktView(e.target.value)} className="w-full bg-[#0d1117] border border-app-border rounded-lg px-4 py-2.5 text-app-textPrimary focus:outline-none focus:border-app-primary appearance-none">
+                  <option>NSE</option>
+                  <option>BSE</option>
+                  <option>Global</option>
+                </select>
+              </div>
+
+              <div className="pt-2 border-t border-app-border">
+                <button type="submit" className="bg-app-primary hover:bg-app-primary/90 text-white font-bold py-2.5 px-6 rounded-lg transition-all mt-4">Save Preferences</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    };
+
+    // --- SHELL ---
+    const NAV_ITEMS = [
+      { id: "Dashboard", icon: "layout-dashboard", desc: "Live portfolio intelligence, price action, and the latest model-driven signals." },
+      { id: "Market", icon: "list", desc: "Global and Indian market overview." },
+      { id: "Prediction", icon: "cpu", desc: "AI-driven buy/sell signals and target predictions." },
+      { id: "Analytics", icon: "pie-chart", desc: "Deep performance analytics and trade insights." },
+      { id: "Portfolio", icon: "briefcase", desc: "Your active positions and holdings." },
+      { id: "Watchlist", icon: "eye", desc: "Monitor your favourite stocks." },
+      { id: "Alerts", icon: "bell", desc: "Set price alerts and signal notifications." },
+      { id: "Settings", icon: "settings", desc: "Manage your account and preferences." }
+    ];
+
+    const AppShell = ({ user, activeTab, setActiveTab, onLogout }) => {
+      const currentNav = NAV_ITEMS.find(n => n.id === activeTab);
+
+      const renderContent = () => {
+        switch(activeTab) {
+          case "Dashboard": return <DashboardView />;
+          case "Market": return <MarketView />;
+          case "Prediction": return <PredictionView />;
+          case "Analytics": return <AnalyticsView />;
+          case "Portfolio": return <PortfolioView />;
+          case "Watchlist": return <WatchlistView />;
+          case "Alerts": return <AlertsView />;
+          case "Settings": return <SettingsView user={user} />;
+          default: return <DashboardView />;
+        }
+      };
+
+      return (
+        <div className="flex h-screen bg-app-bg text-app-textPrimary overflow-hidden">
+          {/* Sidebar */}
+          <div className="w-[280px] bg-[#090c10] border-r border-app-border flex flex-col shrink-0">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 rounded bg-gradient-to-br from-app-primary to-app-secondary flex items-center justify-center font-black text-sm shadow-lg shadow-app-primary/20">TQ</div>
+                <div className="font-black text-xl tracking-wider">TREDALQ</div>
+              </div>
+              <div className="text-xs text-app-textMuted font-medium uppercase tracking-wider">AI Trading Intelligence</div>
+            </div>
+            
+            <div className="px-6 pb-4 border-b border-app-border/50">
+              <div className="text-sm font-medium">Signed in as</div>
+              <div className="text-app-primary font-bold truncate">{user.name} <span className="text-app-textMuted font-normal text-xs ml-1">({user.role})</span></div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+              {NAV_ITEMS.map(item => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button 
+                    key={item.id} 
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium ${isActive ? 'bg-app-primary/10 text-app-primary' : 'text-app-textMuted hover:bg-white/5 hover:text-white'}`}
+                  >
+                    <Icon name={item.icon} size={18} />
+                    {item.id}
+                    {isActive && <span className="ml-auto w-2 h-2 rounded-full bg-app-primary"></span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="p-4 border-t border-app-border">
+              <div className="flex items-center justify-between mb-4 px-2">
+                <span className="text-xs text-app-textMuted font-medium">Auto-refresh live quotes</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" defaultChecked />
+                  <div className="w-7 h-4 bg-app-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-app-primary"></div>
+                </label>
+              </div>
+              <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 bg-white/5 hover:bg-app-danger/10 hover:text-app-danger text-app-textMuted py-2.5 rounded-lg transition-colors text-sm font-medium">
+                <Icon name="log-out" size={16} /> Logout
+              </button>
+            </div>
+          </div>
+
+          {/* Main Content */}
+          <div className="flex-1 flex flex-col h-screen overflow-hidden">
+            <header className="h-[72px] border-b border-app-border flex items-center justify-between px-8 shrink-0 bg-app-bg/80 backdrop-blur-md z-10">
+              <div className="pt-2">
+                <h1 className="text-2xl font-black">{currentNav.id}</h1>
+                <p className="text-sm text-app-textMuted">{currentNav.desc}</p>
+              </div>
+              <button className="bg-app-card hover:bg-[#1f2532] border border-app-border text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                <Icon name="layout-dashboard" size={16}/> Deploy System
+              </button>
+            </header>
+            
+            <main className="flex-1 overflow-y-auto p-8">
+              <div className="max-w-7xl mx-auto">
+                {renderContent()}
+              </div>
+            </main>
+          </div>
+        </div>
+      );
+    };
+
+    // --- APP CONTAINER ---
+    const App = () => {
+      const [users, setUsers] = useState(MOCK_USERS);
+      const [currentUser, setCurrentUser] = useState(null);
+      const [authView, setAuthView] = useState("login");
+      const [activeTab, setActiveTab] = useState("Dashboard");
+
+      const handleLogin = (email, password, setError) => {
+        const u = users.find(x => x.email.toLowerCase() === email.toLowerCase());
+        if (!u || u.password !== password) {
+          setError("Invalid email or password.");
+        } else {
+          setError("");
+          setCurrentUser(u);
+          setActiveTab("Dashboard");
+        }
+      };
+
+      const handleRegister = (name, email, password, confirm, setError) => {
+        if (!name.trim() || !email.trim() || !password || !confirm) {
+          return setError("Please fill in all fields.");
+        }
+        if (password !== confirm) {
+          return setError("Passwords do not match.");
+        }
+        if (password.length < 8) {
+          return setError("Password must be at least 8 characters long.");
+        }
+        if (users.find(x => x.email.toLowerCase() === email.toLowerCase())) {
+          return setError("Email already registered.");
+        }
+
+        const newUser = { id: Date.now(), name, email, password, role: "User" };
+        setUsers([...users, newUser]);
+        setError("");
+        setCurrentUser(newUser);
+        setActiveTab("Dashboard");
+      };
+
+      const handleLogout = () => {
+        setCurrentUser(null);
+        setAuthView("login");
+      };
+
+      if (currentUser) {
+        return <AppShell user={currentUser} activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />;
+      }
+
+      return authView === "login" ? 
+        <LoginView setAuthView={setAuthView} onLogin={handleLogin} /> : 
+        <RegisterView setAuthView={setAuthView} onRegister={handleRegister} />;
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
